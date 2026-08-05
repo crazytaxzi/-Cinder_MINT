@@ -13,7 +13,28 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
       - name: Restore
         run: dotnet restore Cinder.MINT.sln
+
       - name: Build
         run: dotnet build Cinder.MINT.sln -c Release --no-restore
+
+      - name: Publish self-contained Windows app
+        if: github.event_name == 'push'
+        run: >-
+          dotnet publish .\src\Cinder.MINT.App\Cinder.MINT.App.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o .\artifacts\Cinder-MINT-win-x64
+
+      - name: Upload Windows package
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cinder-MINT-win-x64
+          path: artifacts/Cinder-MINT-win-x64/**
+          if-no-files-found: error
