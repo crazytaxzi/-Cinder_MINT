@@ -1,0 +1,18 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{60DC8134-EBA5-43B8-BCC9-BB4BC16C2548}") = "Cinder.MINT.App", "src\Cinder.MINT.App\Cinder.MINT.App.csproj", "{2BC0EC5E-E80F-4C28-A9A5-7BB83B36242B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2BC0EC5E-E80F-4C28-A9A5-7BB83B36242B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2BC0EC5E-E80F-4C28-A9A5-7BB83B36242B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2BC0EC5E-E80F-4C28-A9A5-7BB83B36242B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2BC0EC5E-E80F-4C28-A9A5-7BB83B36242B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
