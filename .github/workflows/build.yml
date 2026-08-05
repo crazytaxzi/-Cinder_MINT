@@ -5,11 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
@@ -31,6 +35,14 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true
           -o .\artifacts\Cinder-MINT-win-x64
 
+      - name: Package test release
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          $version = "v0.1.0-alpha.1"
+          $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
+          Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
+
       - name: Upload Windows package
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
@@ -38,3 +50,39 @@ jobs:
           name: Cinder-MINT-win-x64
           path: artifacts/Cinder-MINT-win-x64/**
           if-no-files-found: error
+
+      - name: Publish GitHub prerelease
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.1]')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "v0.1.0-alpha.1"
+          $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
+
+          @"
+          # Cinder MINT $version
+
+          First public test build of the unified intelligent audio mixer and voice cleanup tool.
+
+          Included in this build:
+          - Voice, microphone, virtual-device, and RVC output cleanup lane
+          - Music and application audio lane through Windows/VB-Audio endpoints
+          - Adaptive level riding, de-essing, EQ, compression, ducking, and limiting
+          - Draggable visual signal graph
+          - Cinder Stream neon interface
+          - Saved presets, endpoint recovery, and feedback-loop protection
+
+          Test notes:
+          - Extract the ZIP before launching Cinder.MINT.App.exe.
+          - Route RVC or application audio through dedicated VB-Cable endpoints for clean isolation.
+          - This is an early prerelease. The limiter is currently sample-peak rather than oversampled true-peak.
+          - Native per-process application capture and calibration tools are planned for later builds.
+          "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
+
+          gh release create $version $zip `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --target "$env:GITHUB_SHA" `
+            --title "Cinder MINT $version" `
+            --notes-file ".\release-notes.md" `
+            --prerelease
