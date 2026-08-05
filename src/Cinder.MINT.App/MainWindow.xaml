@@ -236,17 +236,17 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Text="VOICE/RVC" Style="{StaticResource TinyLabel}" VerticalAlignment="Center"/>
-                        <ProgressBar Grid.Row="0" Grid.Column="1" Height="8" Maximum="100" Value="{Binding VoiceMeter}"
+                        <ProgressBar Grid.Row="0" Grid.Column="1" Height="8" Maximum="100" Value="{Binding VoiceMeter, Mode=OneWay}"
                                      Foreground="{StaticResource GreenBrush}" Background="#272A38"/>
                         <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding VoiceMeter, StringFormat={}{0:F0}%}" HorizontalAlignment="Right"/>
 
                         <TextBlock Grid.Row="1" Text="MUSIC/APP" Style="{StaticResource TinyLabel}" VerticalAlignment="Center"/>
-                        <ProgressBar Grid.Row="1" Grid.Column="1" Height="8" Maximum="100" Value="{Binding ProgramMeter}"
+                        <ProgressBar Grid.Row="1" Grid.Column="1" Height="8" Maximum="100" Value="{Binding ProgramMeter, Mode=OneWay}"
                                      Foreground="{StaticResource PurpleBrush}" Background="#272A38"/>
                         <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ProgramMeter, StringFormat={}{0:F0}%}" HorizontalAlignment="Right"/>
 
                         <TextBlock Grid.Row="2" Text="MASTER" Style="{StaticResource TinyLabel}" VerticalAlignment="Center"/>
-                        <ProgressBar Grid.Row="2" Grid.Column="1" Height="8" Maximum="100" Value="{Binding MasterMeter}"
+                        <ProgressBar Grid.Row="2" Grid.Column="1" Height="8" Maximum="100" Value="{Binding MasterMeter, Mode=OneWay}"
                                      Foreground="{StaticResource HotBrush}" Background="#272A38"/>
                         <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding MasterMeter, StringFormat={}{0:F0}%}" HorizontalAlignment="Right"/>
                     </Grid>
