@@ -12,9 +12,8 @@ public sealed class AudioEngine : IDisposable
     private const int EngineChannels = 2;
 
     private readonly AudioDeviceService _devices;
-    private readonly List<IWaveIn> _captures = [];
+    private readonly Dictionary<Guid, InputCaptureHub> _inputHubs = [];
     private readonly List<WasapiOut> _outputs = [];
-    private readonly List<BufferedWaveProvider> _buffers = [];
     private bool _disposed;
 
     public AudioEngine(AudioDeviceService devices)
@@ -45,6 +44,12 @@ public sealed class AudioEngine : IDisposable
                 AudioEndpointChoice endpoint = outputNode.Endpoint
                     ?? throw new InvalidOperationException($"Choose an endpoint for {outputNode.Title}.");
 
+                provider = new RunawayFeedbackGuardSampleProvider(
+                    provider,
+                    () => Faulted?.Invoke(
+                        this,
+                        $"FEEDBACK GUARD — muted {outputNode.Title} after detecting a sustained full-scale loop."));
+
                 MMDevice outputDevice = _devices.Resolve(endpoint.Id);
                 var output = new WasapiOut(
                     outputDevice,
@@ -57,8 +62,8 @@ public sealed class AudioEngine : IDisposable
                 _outputs.Add(output);
             }
 
-            foreach (IWaveIn capture in _captures)
-                capture.StartRecording();
+            foreach (InputCaptureHub hub in _inputHubs.Values)
+                hub.Start();
 
             foreach (WasapiOut output in _outputs)
                 output.Play();
@@ -76,24 +81,20 @@ public sealed class AudioEngine : IDisposable
     {
         IsRunning = false;
 
-        foreach (IWaveIn capture in _captures)
-        {
-            try { capture.StopRecording(); } catch { }
-        }
-
+        // Silence outputs before tearing down capture domains. This prevents a
+        // partially disposed graph from being heard during shutdown.
         foreach (WasapiOut output in _outputs)
         {
             try { output.Stop(); } catch { }
         }
 
-        foreach (IWaveIn capture in _captures)
-            capture.Dispose();
         foreach (WasapiOut output in _outputs)
             output.Dispose();
-
-        _captures.Clear();
         _outputs.Clear();
-        _buffers.Clear();
+
+        foreach (InputCaptureHub hub in _inputHubs.Values)
+            hub.Dispose();
+        _inputHubs.Clear();
 
         Levels.VoiceActivity = 0;
         Levels.VoicePeakDb = -90;
@@ -131,15 +132,26 @@ public sealed class AudioEngine : IDisposable
         AudioEndpointChoice endpoint = node.Endpoint
             ?? throw new InvalidOperationException($"Choose an endpoint for {node.Title}.");
 
-        IWaveIn capture = CreateCapture(endpoint, node.LatencyMs);
-        BufferedWaveProvider buffer = CreateBuffer(capture.WaveFormat);
-        _captures.Add(capture);
-        _buffers.Add(buffer);
-        AttachCapture(capture, buffer, node.Title);
+        if (!_inputHubs.TryGetValue(node.Id, out InputCaptureHub? hub))
+        {
+            IWaveIn capture = CreateCapture(endpoint, node.LatencyMs);
+            hub = new InputCaptureHub(
+                capture,
+                node.Title,
+                message => Faulted?.Invoke(this, message));
+            _inputHubs.Add(node.Id, hub);
+        }
 
-        ISampleProvider normalized = Normalize(buffer);
-        var config = EmptyConfiguration(node.Profile, node.IsVoiceActivitySource, !node.IsVoiceActivitySource, false);
-        return new MintDspSampleProvider(normalized, config, Levels);
+        // Every branch receives its own buffer. The capture session is shared,
+        // but samples are never consumed from another branch's queue.
+        ISampleProvider isolatedBranch = hub.CreateSubscriber();
+        DspConfiguration config = EmptyConfiguration(
+            node.Profile,
+            node.IsVoiceActivitySource,
+            !node.IsVoiceActivitySource,
+            false);
+
+        return new MintDspSampleProvider(isolatedBranch, config, Levels);
     }
 
     private ISampleProvider BuildMixer(
@@ -155,6 +167,7 @@ public sealed class AudioEngine : IDisposable
             .Select(connection => BuildConnectionSource(graph, connection, buildStack))
             .ToList();
 
+        // This is the only audible summing point in the engine.
         ISampleProvider mixed = providers.Count == 1
             ? providers[0]
             : new MixingSampleProvider(providers) { ReadFully = true };
@@ -178,6 +191,7 @@ public sealed class AudioEngine : IDisposable
         if (sidechainConnection is null)
             return main;
 
+        // The sidechain is analyzed only. It is never added to the audible MAIN path.
         ISampleProvider sidechain = BuildConnectionSource(graph, sidechainConnection, buildStack);
         return new SidechainDuckerSampleProvider(main, sidechain, node.Profile);
     }
@@ -238,7 +252,7 @@ public sealed class AudioEngine : IDisposable
         if (incoming.Count == 0)
             throw new InvalidOperationException($"Connect something to {node.Title} · {portName}.");
         if (incoming.Count > 1)
-            throw new InvalidOperationException($"{node.Title} · {portName} accepts only one cable.");
+            throw new InvalidOperationException($"{node.Title} · {portName} accepts only one cable. Use a MIX BUS to combine signals.");
 
         return BuildConnectionSource(graph, incoming[0], buildStack);
     }
@@ -270,27 +284,6 @@ public sealed class AudioEngine : IDisposable
             DiscardOnBufferOverflow = true,
             ReadFully = true
         };
-
-    private void AttachCapture(IWaveIn capture, BufferedWaveProvider buffer, string nodeTitle)
-    {
-        capture.DataAvailable += (_, e) =>
-        {
-            try
-            {
-                buffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
-            }
-            catch (Exception ex)
-            {
-                Faulted?.Invoke(this, $"{nodeTitle} buffer failed: {ex.Message}");
-            }
-        };
-
-        capture.RecordingStopped += (_, e) =>
-        {
-            if (IsRunning && e.Exception is not null)
-                Faulted?.Invoke(this, $"{nodeTitle} capture stopped: {e.Exception.Message}");
-        };
-    }
 
     private static ISampleProvider Normalize(BufferedWaveProvider buffer)
     {
@@ -344,5 +337,83 @@ public sealed class AudioEngine : IDisposable
         if (_disposed) return;
         _disposed = true;
         Stop();
+    }
+
+    private sealed class InputCaptureHub : IDisposable
+    {
+        private readonly IWaveIn _capture;
+        private readonly string _title;
+        private readonly Action<string> _faulted;
+        private readonly List<BufferedWaveProvider> _subscribers = [];
+        private readonly object _sync = new();
+        private bool _running;
+        private bool _disposed;
+
+        public InputCaptureHub(IWaveIn capture, string title, Action<string> faulted)
+        {
+            _capture = capture;
+            _title = title;
+            _faulted = faulted;
+            _capture.DataAvailable += CaptureOnDataAvailable;
+            _capture.RecordingStopped += CaptureOnRecordingStopped;
+        }
+
+        public ISampleProvider CreateSubscriber()
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(InputCaptureHub));
+
+            BufferedWaveProvider buffer = CreateBuffer(_capture.WaveFormat);
+            lock (_sync)
+                _subscribers.Add(buffer);
+
+            return Normalize(buffer);
+        }
+
+        public void Start()
+        {
+            if (_running || _disposed) return;
+            _running = true;
+            _capture.StartRecording();
+        }
+
+        private void CaptureOnDataAvailable(object? sender, WaveInEventArgs e)
+        {
+            BufferedWaveProvider[] subscribers;
+            lock (_sync)
+                subscribers = _subscribers.ToArray();
+
+            foreach (BufferedWaveProvider subscriber in subscribers)
+            {
+                try
+                {
+                    subscriber.AddSamples(e.Buffer, 0, e.BytesRecorded);
+                }
+                catch (Exception ex)
+                {
+                    _faulted($"{_title} isolated branch buffer failed: {ex.Message}");
+                }
+            }
+        }
+
+        private void CaptureOnRecordingStopped(object? sender, StoppedEventArgs e)
+        {
+            if (_running && e.Exception is not null)
+                _faulted($"{_title} capture stopped: {e.Exception.Message}");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _running = false;
+
+            try { _capture.StopRecording(); } catch { }
+            _capture.DataAvailable -= CaptureOnDataAvailable;
+            _capture.RecordingStopped -= CaptureOnRecordingStopped;
+            _capture.Dispose();
+
+            lock (_sync)
+                _subscribers.Clear();
+        }
     }
 }
