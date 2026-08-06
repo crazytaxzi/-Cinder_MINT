@@ -12,11 +12,9 @@ public sealed class AudioEngine : IDisposable
     private const int EngineChannels = 2;
 
     private readonly AudioDeviceService _devices;
-    private IWaveIn? _voiceCapture;
-    private IWaveIn? _programCapture;
-    private WasapiOut? _output;
-    private BufferedWaveProvider? _voiceBuffer;
-    private BufferedWaveProvider? _programBuffer;
+    private readonly List<IWaveIn> _captures = [];
+    private readonly List<WasapiOut> _outputs = [];
+    private readonly List<BufferedWaveProvider> _buffers = [];
     private bool _disposed;
 
     public AudioEngine(AudioDeviceService devices)
@@ -25,64 +23,45 @@ public sealed class AudioEngine : IDisposable
     }
 
     public AudioLevelState Levels { get; } = new();
-
     public bool IsRunning { get; private set; }
-
     public event EventHandler<string>? Faulted;
 
-    public void Start(
-        AudioEndpointChoice voiceSource,
-        AudioEndpointChoice programSource,
-        AudioEndpointChoice output,
-        DspConfiguration voiceConfig,
-        DspConfiguration programConfig,
-        DspConfiguration masterConfig,
-        int latencyMs = 30)
+    public void Start(AudioGraphModel graph)
     {
         Stop();
 
         try
         {
-            if (programSource.Id == output.Id)
-                throw new InvalidOperationException(
-                    "The music/app loopback endpoint cannot also be the MINT output. " +
-                    "That creates a feedback loop. Choose VB-Cable or another dedicated output.");
+            if (!graph.Validate(out string validationError))
+                throw new InvalidOperationException(validationError);
 
-            if (voiceSource.Kind == EndpointSourceKind.RenderLoopback && voiceSource.Id == output.Id)
-                throw new InvalidOperationException(
-                    "The RVC/voice loopback endpoint cannot also be the MINT output. " +
-                    "Use separate virtual endpoints for RVC input and final stream output.");
+            List<AudioNodeModel> outputNodes = graph.Nodes
+                .Where(x => x.Type == AudioNodeType.Output && graph.Incoming(x).Count > 0)
+                .ToList();
 
-            _voiceCapture = CreateCapture(voiceSource, latencyMs);
-            _programCapture = CreateCapture(programSource, latencyMs);
-
-            _voiceBuffer = CreateBuffer(_voiceCapture.WaveFormat);
-            _programBuffer = CreateBuffer(_programCapture.WaveFormat);
-
-            AttachCapture(_voiceCapture, _voiceBuffer, "Voice/RVC");
-            AttachCapture(_programCapture, _programBuffer, "Music/App");
-
-            ISampleProvider voice = Normalize(_voiceBuffer);
-            ISampleProvider program = Normalize(_programBuffer);
-
-            var voiceDsp = new MintDspSampleProvider(voice, voiceConfig, Levels);
-            var programDsp = new MintDspSampleProvider(program, programConfig, Levels);
-
-            var mixer = new MixingSampleProvider(new[] { voiceDsp, programDsp })
+            foreach (AudioNodeModel outputNode in outputNodes)
             {
-                ReadFully = true
-            };
+                ISampleProvider provider = BuildNode(graph, outputNode, []);
+                AudioEndpointChoice endpoint = outputNode.Endpoint
+                    ?? throw new InvalidOperationException($"Choose an endpoint for {outputNode.Title}.");
 
-            var master = new MintDspSampleProvider(mixer, masterConfig, Levels);
+                MMDevice outputDevice = _devices.Resolve(endpoint.Id);
+                var output = new WasapiOut(
+                    outputDevice,
+                    AudioClientShareMode.Shared,
+                    true,
+                    outputNode.LatencyMs);
 
-            using MMDevice outputDevice = _devices.Resolve(output.Id);
-            _output = new WasapiOut(outputDevice, AudioClientShareMode.Shared, true, latencyMs);
-            _output.PlaybackStopped += OnPlaybackStopped;
-            _output.Init(master);
+                output.PlaybackStopped += OnPlaybackStopped;
+                output.Init(provider);
+                _outputs.Add(output);
+            }
 
-            _voiceCapture.StartRecording();
-            _programCapture.StartRecording();
-            _output.Play();
+            foreach (IWaveIn capture in _captures)
+                capture.StartRecording();
+
+            foreach (WasapiOut output in _outputs)
+                output.Play();
 
             IsRunning = true;
         }
@@ -97,24 +76,181 @@ public sealed class AudioEngine : IDisposable
     {
         IsRunning = false;
 
-        try { _voiceCapture?.StopRecording(); } catch { }
-        try { _programCapture?.StopRecording(); } catch { }
-        try { _output?.Stop(); } catch { }
+        foreach (IWaveIn capture in _captures)
+        {
+            try { capture.StopRecording(); } catch { }
+        }
 
-        _voiceCapture?.Dispose();
-        _programCapture?.Dispose();
-        _output?.Dispose();
+        foreach (WasapiOut output in _outputs)
+        {
+            try { output.Stop(); } catch { }
+        }
 
-        _voiceCapture = null;
-        _programCapture = null;
-        _output = null;
-        _voiceBuffer = null;
-        _programBuffer = null;
+        foreach (IWaveIn capture in _captures)
+            capture.Dispose();
+        foreach (WasapiOut output in _outputs)
+            output.Dispose();
+
+        _captures.Clear();
+        _outputs.Clear();
+        _buffers.Clear();
 
         Levels.VoiceActivity = 0;
         Levels.VoicePeakDb = -90;
         Levels.ProgramPeakDb = -90;
         Levels.MasterPeakDb = -90;
+    }
+
+    private ISampleProvider BuildNode(
+        AudioGraphModel graph,
+        AudioNodeModel node,
+        HashSet<Guid> buildStack)
+    {
+        if (!buildStack.Add(node.Id))
+            throw new InvalidOperationException($"Audio cycle detected at {node.Title}.");
+
+        try
+        {
+            return node.Type switch
+            {
+                AudioNodeType.Input => BuildInput(node),
+                AudioNodeType.Mixer => BuildMixer(graph, node, buildStack),
+                AudioNodeType.Ducker => BuildDucker(graph, node, buildStack),
+                AudioNodeType.Output => BuildSingleInput(graph, node, "IN", buildStack),
+                _ => BuildProcessor(graph, node, buildStack)
+            };
+        }
+        finally
+        {
+            buildStack.Remove(node.Id);
+        }
+    }
+
+    private ISampleProvider BuildInput(AudioNodeModel node)
+    {
+        AudioEndpointChoice endpoint = node.Endpoint
+            ?? throw new InvalidOperationException($"Choose an endpoint for {node.Title}.");
+
+        IWaveIn capture = CreateCapture(endpoint, node.LatencyMs);
+        BufferedWaveProvider buffer = CreateBuffer(capture.WaveFormat);
+        _captures.Add(capture);
+        _buffers.Add(buffer);
+        AttachCapture(capture, buffer, node.Title);
+
+        ISampleProvider normalized = Normalize(buffer);
+        var config = EmptyConfiguration(node.Profile, node.IsVoiceActivitySource, !node.IsVoiceActivitySource, false);
+        return new MintDspSampleProvider(normalized, config, Levels);
+    }
+
+    private ISampleProvider BuildMixer(
+        AudioGraphModel graph,
+        AudioNodeModel node,
+        HashSet<Guid> buildStack)
+    {
+        List<AudioConnectionModel> incoming = graph.Incoming(node, "MIX IN").ToList();
+        if (incoming.Count == 0)
+            throw new InvalidOperationException($"{node.Title} has no connected inputs.");
+
+        List<ISampleProvider> providers = incoming
+            .Select(connection => BuildConnectionSource(graph, connection, buildStack))
+            .ToList();
+
+        ISampleProvider mixed = providers.Count == 1
+            ? providers[0]
+            : new MixingSampleProvider(providers) { ReadFully = true };
+
+        if (!node.Enabled) return mixed;
+        return new MintDspSampleProvider(
+            mixed,
+            EmptyConfiguration(node.Profile, false, false, false),
+            Levels);
+    }
+
+    private ISampleProvider BuildDucker(
+        AudioGraphModel graph,
+        AudioNodeModel node,
+        HashSet<Guid> buildStack)
+    {
+        ISampleProvider main = BuildSingleInput(graph, node, "MAIN", buildStack);
+        if (!node.Enabled) return main;
+
+        AudioConnectionModel? sidechainConnection = graph.Incoming(node, "SIDECHAIN").FirstOrDefault();
+        if (sidechainConnection is null)
+            return main;
+
+        ISampleProvider sidechain = BuildConnectionSource(graph, sidechainConnection, buildStack);
+        return new SidechainDuckerSampleProvider(main, sidechain, node.Profile);
+    }
+
+    private ISampleProvider BuildProcessor(
+        AudioGraphModel graph,
+        AudioNodeModel node,
+        HashSet<Guid> buildStack)
+    {
+        ISampleProvider input = BuildSingleInput(graph, node, "IN", buildStack);
+        if (!node.Enabled) return input;
+
+        DspConfiguration config = EmptyConfiguration(node.Profile, false, false, false);
+
+        switch (node.Type)
+        {
+            case AudioNodeType.Gain:
+                break;
+            case AudioNodeType.NoiseGate:
+                config.IsVoice = true;
+                config.GateEnabled = true;
+                break;
+            case AudioNodeType.HighPass:
+                config.IsVoice = true;
+                config.HighPassEnabled = true;
+                break;
+            case AudioNodeType.DeEsser:
+                config.IsVoice = true;
+                config.DeEsserEnabled = true;
+                break;
+            case AudioNodeType.Equalizer:
+                config.EqEnabled = true;
+                break;
+            case AudioNodeType.LevelRider:
+                config.RiderEnabled = true;
+                break;
+            case AudioNodeType.Compressor:
+                config.CompressorEnabled = true;
+                break;
+            case AudioNodeType.Limiter:
+                config.IsMaster = true;
+                config.LimiterEnabled = true;
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported processor node: {node.Type}.");
+        }
+
+        return new MintDspSampleProvider(input, config, Levels);
+    }
+
+    private ISampleProvider BuildSingleInput(
+        AudioGraphModel graph,
+        AudioNodeModel node,
+        string portName,
+        HashSet<Guid> buildStack)
+    {
+        List<AudioConnectionModel> incoming = graph.Incoming(node, portName).ToList();
+        if (incoming.Count == 0)
+            throw new InvalidOperationException($"Connect something to {node.Title} · {portName}.");
+        if (incoming.Count > 1)
+            throw new InvalidOperationException($"{node.Title} · {portName} accepts only one cable.");
+
+        return BuildConnectionSource(graph, incoming[0], buildStack);
+    }
+
+    private ISampleProvider BuildConnectionSource(
+        AudioGraphModel graph,
+        AudioConnectionModel connection,
+        HashSet<Guid> buildStack)
+    {
+        AudioNodeModel source = graph.SourceNode(connection)
+            ?? throw new InvalidOperationException("A cable points to a missing source node.");
+        return BuildNode(graph, source, buildStack);
     }
 
     private IWaveIn CreateCapture(AudioEndpointChoice source, int latencyMs)
@@ -135,7 +271,7 @@ public sealed class AudioEngine : IDisposable
             ReadFully = true
         };
 
-    private void AttachCapture(IWaveIn capture, BufferedWaveProvider buffer, string lane)
+    private void AttachCapture(IWaveIn capture, BufferedWaveProvider buffer, string nodeTitle)
     {
         capture.DataAvailable += (_, e) =>
         {
@@ -145,14 +281,14 @@ public sealed class AudioEngine : IDisposable
             }
             catch (Exception ex)
             {
-                Faulted?.Invoke(this, $"{lane} buffer failed: {ex.Message}");
+                Faulted?.Invoke(this, $"{nodeTitle} buffer failed: {ex.Message}");
             }
         };
 
         capture.RecordingStopped += (_, e) =>
         {
             if (IsRunning && e.Exception is not null)
-                Faulted?.Invoke(this, $"{lane} capture stopped: {e.Exception.Message}");
+                Faulted?.Invoke(this, $"{nodeTitle} capture stopped: {e.Exception.Message}");
         };
     }
 
@@ -175,6 +311,27 @@ public sealed class AudioEngine : IDisposable
 
         return provider;
     }
+
+    private static DspConfiguration EmptyConfiguration(
+        MintProfile profile,
+        bool isVoice,
+        bool isProgram,
+        bool isMaster) =>
+        new()
+        {
+            Profile = profile,
+            IsVoice = isVoice,
+            IsProgram = isProgram,
+            IsMaster = isMaster,
+            GateEnabled = false,
+            HighPassEnabled = false,
+            DeEsserEnabled = false,
+            EqEnabled = false,
+            RiderEnabled = false,
+            CompressorEnabled = false,
+            DuckerEnabled = false,
+            LimiterEnabled = false
+        };
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
