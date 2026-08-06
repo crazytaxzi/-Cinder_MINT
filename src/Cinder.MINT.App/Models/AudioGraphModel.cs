@@ -7,8 +7,8 @@ namespace Cinder.MINT.Models;
 
 public enum AudioNodeType
 {
-    VoiceSource,
-    ProgramSource,
+    Input,
+    Gain,
     NoiseGate,
     HighPass,
     DeEsser,
@@ -21,16 +21,100 @@ public enum AudioNodeType
     Output
 }
 
+public enum AudioPortDirection
+{
+    Input,
+    Output
+}
+
+public enum AudioPortKind
+{
+    Audio,
+    Sidechain
+}
+
+public sealed class AudioPortModel
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string Name { get; init; }
+    public required AudioPortDirection Direction { get; init; }
+    public AudioPortKind Kind { get; init; } = AudioPortKind.Audio;
+    public bool AllowsMultipleConnections { get; init; }
+}
+
 public sealed class AudioNodeModel : INotifyPropertyChanged
 {
     private double _x;
     private double _y;
     private bool _enabled = true;
+    private string _title;
+    private string _subtitle;
+    private AudioEndpointChoice? _endpoint;
+    private string? _savedEndpointId;
+    private bool _isVoiceActivitySource;
+    private int _latencyMs = 30;
 
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required AudioNodeType Type { get; init; }
-    public required string Title { get; init; }
-    public string Subtitle { get; init; } = string.Empty;
+    public AudioNodeModel(AudioNodeType type, string title, string subtitle, Guid? id = null)
+    {
+        Id = id ?? Guid.NewGuid();
+        Type = type;
+        _title = title;
+        _subtitle = subtitle;
+        ConfigurePorts();
+    }
+
+    public Guid Id { get; }
+    public AudioNodeType Type { get; }
+    public MintProfile Profile { get; } = new();
+    public ObservableCollection<AudioPortModel> Inputs { get; } = [];
+    public ObservableCollection<AudioPortModel> Outputs { get; } = [];
+
+    public string Title
+    {
+        get => _title;
+        set => SetField(ref _title, value);
+    }
+
+    public string Subtitle
+    {
+        get => _subtitle;
+        set
+        {
+            if (SetField(ref _subtitle, value))
+                OnPropertyChanged(nameof(DisplaySubtitle));
+        }
+    }
+
+    public string DisplaySubtitle => Endpoint?.DisplayName ?? Subtitle;
+
+    public AudioEndpointChoice? Endpoint
+    {
+        get => _endpoint;
+        set
+        {
+            if (!SetField(ref _endpoint, value)) return;
+            SavedEndpointId = value?.Id;
+            OnPropertyChanged(nameof(DisplaySubtitle));
+        }
+    }
+
+    public string? SavedEndpointId
+    {
+        get => _savedEndpointId;
+        set => SetField(ref _savedEndpointId, value);
+    }
+
+    public bool IsVoiceActivitySource
+    {
+        get => _isVoiceActivitySource;
+        set => SetField(ref _isVoiceActivitySource, value);
+    }
+
+    public int LatencyMs
+    {
+        get => _latencyMs;
+        set => SetField(ref _latencyMs, Math.Clamp(value, 10, 150));
+    }
 
     public double X
     {
@@ -50,78 +134,445 @@ public sealed class AudioNodeModel : INotifyPropertyChanged
         set => SetField(ref _enabled, value);
     }
 
-    public Rect Bounds => new(X, Y, 156, 72);
+    public bool CanBypass => Type is not AudioNodeType.Input and not AudioNodeType.Output;
+
+    public AudioPortModel? FindInput(string name) =>
+        Inputs.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    public AudioPortModel? FindOutput(string name) =>
+        Outputs.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private void ConfigurePorts()
+    {
+        switch (Type)
+        {
+            case AudioNodeType.Input:
+                Outputs.Add(Port("OUT", AudioPortDirection.Output));
+                break;
+
+            case AudioNodeType.Ducker:
+                Inputs.Add(Port("MAIN", AudioPortDirection.Input));
+                Inputs.Add(Port("SIDECHAIN", AudioPortDirection.Input, AudioPortKind.Sidechain));
+                Outputs.Add(Port("OUT", AudioPortDirection.Output));
+                break;
+
+            case AudioNodeType.Mixer:
+                Inputs.Add(Port("MIX IN", AudioPortDirection.Input, AudioPortKind.Audio, true));
+                Outputs.Add(Port("OUT", AudioPortDirection.Output));
+                break;
+
+            case AudioNodeType.Output:
+                Inputs.Add(Port("IN", AudioPortDirection.Input));
+                break;
+
+            default:
+                Inputs.Add(Port("IN", AudioPortDirection.Input));
+                Outputs.Add(Port("OUT", AudioPortDirection.Output));
+                break;
+        }
+    }
+
+    private static AudioPortModel Port(
+        string name,
+        AudioPortDirection direction,
+        AudioPortKind kind = AudioPortKind.Audio,
+        bool allowsMultiple = false) =>
+        new()
+        {
+            Name = name,
+            Direction = direction,
+            Kind = kind,
+            AllowsMultipleConnections = allowsMultiple
+        };
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private void SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        OnPropertyChanged(name);
+        return true;
     }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-public sealed record AudioConnectionModel(Guid SourceId, Guid TargetId);
+public sealed record AudioConnectionModel(
+    Guid Id,
+    Guid SourceNodeId,
+    Guid SourcePortId,
+    Guid TargetNodeId,
+    Guid TargetPortId);
 
 public sealed class AudioGraphModel
 {
     public ObservableCollection<AudioNodeModel> Nodes { get; } = [];
     public ObservableCollection<AudioConnectionModel> Connections { get; } = [];
 
-    public static AudioGraphModel CreateDefault()
+    public AudioNodeModel AddNode(
+        AudioNodeType type,
+        double x,
+        double y,
+        string? title = null,
+        Guid? id = null)
     {
-        var graph = new AudioGraphModel();
-
-        var voice = Node(AudioNodeType.VoiceSource, "VOICE / RVC", "capture or loopback", 28, 70);
-        var gate = Node(AudioNodeType.NoiseGate, "SMART GATE", "adaptive floor", 220, 70);
-        var hp = Node(AudioNodeType.HighPass, "RUMBLE CUT", "anti-plosive", 412, 70);
-        var deEss = Node(AudioNodeType.DeEsser, "DE-ESSER", "dynamic sibilance", 604, 70);
-        var voiceEq = Node(AudioNodeType.Equalizer, "VOICE EQ", "3-band tone", 796, 70);
-        var voiceComp = Node(AudioNodeType.Compressor, "VOICE COMP", "level control", 988, 70);
-
-        var music = Node(AudioNodeType.ProgramSource, "MUSIC / APP", "endpoint loopback", 28, 220);
-        var rider = Node(AudioNodeType.LevelRider, "LEVEL RIDER", "slow loudness", 220, 220);
-        var musicEq = Node(AudioNodeType.Equalizer, "MUSIC EQ", "3-band tone", 412, 220);
-        var musicComp = Node(AudioNodeType.Compressor, "MUSIC COMP", "dynamic control", 604, 220);
-        var duck = Node(AudioNodeType.Ducker, "MIC DUCKER", "voice sidechain", 796, 220);
-
-        var mixer = Node(AudioNodeType.Mixer, "STREAM BUS", "32-bit float mix", 988, 220);
-        var limiter = Node(AudioNodeType.Limiter, "MASTER LIMITER", "-1 dB ceiling", 1180, 145);
-        var output = Node(AudioNodeType.Output, "OUTPUT", "VB-Cable / device", 1372, 145);
-
-        foreach (var node in new[] { voice, gate, hp, deEss, voiceEq, voiceComp, music, rider, musicEq, musicComp, duck, mixer, limiter, output })
-            graph.Nodes.Add(node);
-
-        graph.Link(voice, gate);
-        graph.Link(gate, hp);
-        graph.Link(hp, deEss);
-        graph.Link(deEss, voiceEq);
-        graph.Link(voiceEq, voiceComp);
-        graph.Link(voiceComp, mixer);
-
-        graph.Link(music, rider);
-        graph.Link(rider, musicEq);
-        graph.Link(musicEq, musicComp);
-        graph.Link(musicComp, duck);
-        graph.Link(duck, mixer);
-
-        graph.Link(mixer, limiter);
-        graph.Link(limiter, output);
-
-        return graph;
-    }
-
-    private static AudioNodeModel Node(AudioNodeType type, string title, string subtitle, double x, double y) =>
-        new()
+        (string defaultTitle, string subtitle) = Defaults(type);
+        var node = new AudioNodeModel(type, title ?? defaultTitle, subtitle, id)
         {
-            Type = type,
-            Title = title,
-            Subtitle = subtitle,
             X = x,
             Y = y
         };
 
-    private void Link(AudioNodeModel source, AudioNodeModel target) =>
-        Connections.Add(new AudioConnectionModel(source.Id, target.Id));
+        ApplyDefaultProfile(node);
+        Nodes.Add(node);
+        return node;
+    }
+
+    public void RemoveNode(AudioNodeModel node)
+    {
+        foreach (AudioConnectionModel connection in Connections
+                     .Where(x => x.SourceNodeId == node.Id || x.TargetNodeId == node.Id)
+                     .ToList())
+            Connections.Remove(connection);
+
+        Nodes.Remove(node);
+    }
+
+    public bool TryConnect(
+        AudioPortModel first,
+        AudioPortModel second,
+        out string error)
+    {
+        AudioPortModel sourcePort = first.Direction == AudioPortDirection.Output ? first : second;
+        AudioPortModel targetPort = first.Direction == AudioPortDirection.Input ? first : second;
+
+        if (sourcePort.Direction != AudioPortDirection.Output ||
+            targetPort.Direction != AudioPortDirection.Input)
+        {
+            error = "Connect an output socket to an input socket.";
+            return false;
+        }
+
+        AudioNodeModel? sourceNode = GetNodeForPort(sourcePort.Id);
+        AudioNodeModel? targetNode = GetNodeForPort(targetPort.Id);
+        if (sourceNode is null || targetNode is null)
+        {
+            error = "One of those sockets no longer exists.";
+            return false;
+        }
+
+        if (sourceNode.Id == targetNode.Id)
+        {
+            error = "A node cannot cable itself.";
+            return false;
+        }
+
+        if (sourcePort.Kind != AudioPortKind.Audio)
+        {
+            error = "Only audio outputs can feed the graph.";
+            return false;
+        }
+
+        if (Connections.Any(x => x.SourcePortId == sourcePort.Id && x.TargetPortId == targetPort.Id))
+        {
+            error = "Those sockets are already connected.";
+            return false;
+        }
+
+        if (!targetPort.AllowsMultipleConnections && Connections.Any(x => x.TargetPortId == targetPort.Id))
+        {
+            error = "That input is already occupied. Right-click the socket to disconnect it first.";
+            return false;
+        }
+
+        if (WouldCreateCycle(sourceNode.Id, targetNode.Id))
+        {
+            error = "That cable would create an audio feedback cycle.";
+            return false;
+        }
+
+        Connections.Add(new AudioConnectionModel(
+            Guid.NewGuid(),
+            sourceNode.Id,
+            sourcePort.Id,
+            targetNode.Id,
+            targetPort.Id));
+
+        error = string.Empty;
+        return true;
+    }
+
+    public bool TryConnect(
+        Guid sourceNodeId,
+        string sourcePortName,
+        Guid targetNodeId,
+        string targetPortName,
+        out string error)
+    {
+        AudioNodeModel? sourceNode = Nodes.FirstOrDefault(x => x.Id == sourceNodeId);
+        AudioNodeModel? targetNode = Nodes.FirstOrDefault(x => x.Id == targetNodeId);
+        AudioPortModel? source = sourceNode?.FindOutput(sourcePortName);
+        AudioPortModel? target = targetNode?.FindInput(targetPortName);
+
+        if (source is null || target is null)
+        {
+            error = "Saved cable referenced a missing socket.";
+            return false;
+        }
+
+        return TryConnect(source, target, out error);
+    }
+
+    public void DisconnectPort(Guid portId)
+    {
+        foreach (AudioConnectionModel connection in Connections
+                     .Where(x => x.SourcePortId == portId || x.TargetPortId == portId)
+                     .ToList())
+            Connections.Remove(connection);
+    }
+
+    public void Disconnect(AudioConnectionModel connection) => Connections.Remove(connection);
+
+    public AudioNodeModel? GetNodeForPort(Guid portId) =>
+        Nodes.FirstOrDefault(node =>
+            node.Inputs.Any(x => x.Id == portId) || node.Outputs.Any(x => x.Id == portId));
+
+    public AudioPortModel? GetPort(Guid portId) =>
+        Nodes.SelectMany(x => x.Inputs.Concat(x.Outputs)).FirstOrDefault(x => x.Id == portId);
+
+    public IReadOnlyList<AudioConnectionModel> Incoming(AudioNodeModel node) =>
+        Connections.Where(x => x.TargetNodeId == node.Id).ToList();
+
+    public IReadOnlyList<AudioConnectionModel> Incoming(AudioNodeModel node, string portName)
+    {
+        AudioPortModel? port = node.FindInput(portName);
+        return port is null
+            ? []
+            : Connections.Where(x => x.TargetPortId == port.Id).ToList();
+    }
+
+    public IReadOnlyList<AudioConnectionModel> Outgoing(AudioNodeModel node) =>
+        Connections.Where(x => x.SourceNodeId == node.Id).ToList();
+
+    public AudioNodeModel? SourceNode(AudioConnectionModel connection) =>
+        Nodes.FirstOrDefault(x => x.Id == connection.SourceNodeId);
+
+    public AudioNodeModel? TargetNode(AudioConnectionModel connection) =>
+        Nodes.FirstOrDefault(x => x.Id == connection.TargetNodeId);
+
+    public bool Validate(out string error)
+    {
+        if (HasCycle())
+        {
+            error = "The patch contains an audio cycle. Remove the cable feeding back upstream.";
+            return false;
+        }
+
+        List<AudioNodeModel> outputs = Nodes
+            .Where(x => x.Type == AudioNodeType.Output && Incoming(x).Count > 0)
+            .ToList();
+
+        if (outputs.Count == 0)
+        {
+            error = "Connect at least one signal chain to an OUTPUT node.";
+            return false;
+        }
+
+        foreach (AudioNodeModel output in outputs)
+        {
+            if (output.Endpoint is null)
+            {
+                error = $"Choose an audio endpoint inside the {output.Title} node.";
+                return false;
+            }
+
+            HashSet<Guid> upstream = GetUpstreamNodeIds(output);
+            foreach (AudioNodeModel source in Nodes.Where(x => upstream.Contains(x.Id) && x.Type == AudioNodeType.Input))
+            {
+                if (source.Endpoint is null)
+                {
+                    error = $"Choose an audio endpoint inside the {source.Title} node.";
+                    return false;
+                }
+
+                if (source.Endpoint.Kind == EndpointSourceKind.RenderLoopback &&
+                    source.Endpoint.Id == output.Endpoint.Id)
+                {
+                    error = $"{source.Title} is listening to the same endpoint used by {output.Title}. That would feed MINT into itself.";
+                    return false;
+                }
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    public HashSet<Guid> GetUpstreamNodeIds(AudioNodeModel node)
+    {
+        var result = new HashSet<Guid>();
+        var stack = new Stack<Guid>();
+        stack.Push(node.Id);
+
+        while (stack.Count > 0)
+        {
+            Guid current = stack.Pop();
+            foreach (AudioConnectionModel connection in Connections.Where(x => x.TargetNodeId == current))
+            {
+                if (result.Add(connection.SourceNodeId))
+                    stack.Push(connection.SourceNodeId);
+            }
+        }
+
+        return result;
+    }
+
+    private bool WouldCreateCycle(Guid sourceNodeId, Guid targetNodeId)
+    {
+        if (sourceNodeId == targetNodeId) return true;
+
+        var stack = new Stack<Guid>();
+        var visited = new HashSet<Guid>();
+        stack.Push(targetNodeId);
+
+        while (stack.Count > 0)
+        {
+            Guid current = stack.Pop();
+            if (!visited.Add(current)) continue;
+            if (current == sourceNodeId) return true;
+
+            foreach (AudioConnectionModel connection in Connections.Where(x => x.SourceNodeId == current))
+                stack.Push(connection.TargetNodeId);
+        }
+
+        return false;
+    }
+
+    private bool HasCycle()
+    {
+        var visiting = new HashSet<Guid>();
+        var visited = new HashSet<Guid>();
+
+        bool Visit(Guid nodeId)
+        {
+            if (visiting.Contains(nodeId)) return true;
+            if (!visited.Add(nodeId)) return false;
+
+            visiting.Add(nodeId);
+            foreach (AudioConnectionModel connection in Connections.Where(x => x.SourceNodeId == nodeId))
+            {
+                if (Visit(connection.TargetNodeId)) return true;
+            }
+            visiting.Remove(nodeId);
+            return false;
+        }
+
+        return Nodes.Any(node => Visit(node.Id));
+    }
+
+    public static AudioGraphModel CreateDefault()
+    {
+        var graph = new AudioGraphModel();
+
+        AudioNodeModel voice = graph.AddNode(AudioNodeType.Input, 30, 78, "MIC / RVC INPUT");
+        voice.IsVoiceActivitySource = true;
+        voice.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
+
+        AudioNodeModel gate = graph.AddNode(AudioNodeType.NoiseGate, 250, 78);
+        AudioNodeModel highPass = graph.AddNode(AudioNodeType.HighPass, 470, 78);
+        AudioNodeModel deEsser = graph.AddNode(AudioNodeType.DeEsser, 690, 78);
+        AudioNodeModel voiceEq = graph.AddNode(AudioNodeType.Equalizer, 910, 78, "VOICE EQ");
+        AudioNodeModel voiceComp = graph.AddNode(AudioNodeType.Compressor, 1130, 78, "VOICE COMP");
+
+        AudioNodeModel program = graph.AddNode(AudioNodeType.Input, 30, 286, "APP / MUSIC INPUT");
+        program.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
+        AudioNodeModel rider = graph.AddNode(AudioNodeType.LevelRider, 250, 286);
+        AudioNodeModel programEq = graph.AddNode(AudioNodeType.Equalizer, 470, 286, "PROGRAM EQ");
+        AudioNodeModel programComp = graph.AddNode(AudioNodeType.Compressor, 690, 286, "PROGRAM COMP");
+        AudioNodeModel ducker = graph.AddNode(AudioNodeType.Ducker, 910, 286);
+
+        AudioNodeModel mixer = graph.AddNode(AudioNodeType.Mixer, 1350, 190, "STREAM BUS");
+        AudioNodeModel limiter = graph.AddNode(AudioNodeType.Limiter, 1570, 190, "MASTER LIMITER");
+        AudioNodeModel output = graph.AddNode(AudioNodeType.Output, 1790, 190, "STREAM OUTPUT");
+
+        Connect(graph, voice, "OUT", gate, "IN");
+        Connect(graph, gate, "OUT", highPass, "IN");
+        Connect(graph, highPass, "OUT", deEsser, "IN");
+        Connect(graph, deEsser, "OUT", voiceEq, "IN");
+        Connect(graph, voiceEq, "OUT", voiceComp, "IN");
+        Connect(graph, voiceComp, "OUT", mixer, "MIX IN");
+
+        Connect(graph, program, "OUT", rider, "IN");
+        Connect(graph, rider, "OUT", programEq, "IN");
+        Connect(graph, programEq, "OUT", programComp, "IN");
+        Connect(graph, programComp, "OUT", ducker, "MAIN");
+        Connect(graph, voiceComp, "OUT", ducker, "SIDECHAIN");
+        Connect(graph, ducker, "OUT", mixer, "MIX IN");
+
+        Connect(graph, mixer, "OUT", limiter, "IN");
+        Connect(graph, limiter, "OUT", output, "IN");
+
+        return graph;
+    }
+
+    private static void Connect(
+        AudioGraphModel graph,
+        AudioNodeModel source,
+        string sourcePort,
+        AudioNodeModel target,
+        string targetPort)
+    {
+        if (!graph.TryConnect(source.Id, sourcePort, target.Id, targetPort, out string error))
+            throw new InvalidOperationException(error);
+    }
+
+    private static (string Title, string Subtitle) Defaults(AudioNodeType type) => type switch
+    {
+        AudioNodeType.Input => ("AUDIO INPUT", "choose capture or loopback"),
+        AudioNodeType.Gain => ("GAIN / TRIM", "input level"),
+        AudioNodeType.NoiseGate => ("SMART GATE", "adaptive noise floor"),
+        AudioNodeType.HighPass => ("RUMBLE CUT", "high-pass / anti-plosive"),
+        AudioNodeType.DeEsser => ("DE-ESSER", "dynamic sibilance"),
+        AudioNodeType.Equalizer => ("DYNAMIC EQ", "three-band tone"),
+        AudioNodeType.LevelRider => ("LEVEL RIDER", "slow loudness control"),
+        AudioNodeType.Compressor => ("COMPRESSOR", "dynamic control"),
+        AudioNodeType.Ducker => ("SIDECHAIN DUCKER", "main + sidechain"),
+        AudioNodeType.Mixer => ("MIX BUS", "multi-input summing"),
+        AudioNodeType.Limiter => ("LIMITER", "protected ceiling"),
+        AudioNodeType.Output => ("AUDIO OUTPUT", "choose render endpoint"),
+        _ => (type.ToString().ToUpperInvariant(), string.Empty)
+    };
+
+    private static void ApplyDefaultProfile(AudioNodeModel node)
+    {
+        switch (node.Type)
+        {
+            case AudioNodeType.NoiseGate:
+                node.Profile.GateThresholdDb = -52;
+                node.Profile.AutoMode = true;
+                break;
+            case AudioNodeType.HighPass:
+                node.Profile.HighPassHz = 75;
+                break;
+            case AudioNodeType.DeEsser:
+                node.Profile.DeEsserAmount = 0.35f;
+                node.Profile.AutoMode = true;
+                break;
+            case AudioNodeType.LevelRider:
+                node.Profile.TargetDb = -22;
+                node.Profile.AutoMode = true;
+                break;
+            case AudioNodeType.Compressor:
+                node.Profile.Compression = 0.35f;
+                break;
+            case AudioNodeType.Ducker:
+                node.Profile.DuckingDb = -6;
+                break;
+            case AudioNodeType.Limiter:
+                node.Profile.LimiterCeilingDb = -1;
+                break;
+        }
+    }
 }
