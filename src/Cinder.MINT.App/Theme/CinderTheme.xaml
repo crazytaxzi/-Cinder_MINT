@@ -23,6 +23,14 @@
     <SolidColorBrush x:Key="HotBrush" Color="{StaticResource CinderHot}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource CinderWarning}"/>
 
+    <!-- WPF's stock ComboBox popup otherwise falls back to the light Windows palette. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="{StaticResource CinderPanelRaised}"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="{StaticResource CinderPanelRaised}"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="{StaticResource CinderText}"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{StaticResource CinderPurple}"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="{StaticResource CinderText}"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}" Color="{StaticResource CinderMuted}"/>
+
     <LinearGradientBrush x:Key="CinderGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="{StaticResource CinderGreen}" Offset="0"/>
         <GradientStop Color="{StaticResource CinderPurple}" Offset="1"/>
@@ -96,7 +104,56 @@
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="MaxDropDownHeight" Value="360"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="ItemBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"
+                                          SnapsToDevicePixels="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#342249"/>
+                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PurpleBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#26351B"/>
+                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource GreenBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                            <Setter TargetName="ItemBorder" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="#0D0F18"/>
+        <Setter Property="Foreground" Value="{StaticResource BorderBrush}"/>
     </Style>
 
     <Style TargetType="Slider">
