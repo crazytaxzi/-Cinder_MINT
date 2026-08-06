@@ -13,20 +13,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Apply source safety fixes
-        shell: pwsh
-        run: |
-          python .\tools\fix_endpoint_cycle.py
-          python .\tools\fix_feedback_handler.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .\src\Cinder.MINT.App\Models\AudioGraphModel.cs
-          git add .\src\Cinder.MINT.App\ViewModels\MainViewModel.cs
-          git commit -m "Finalize routing safety handlers"
-          git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -37,6 +23,9 @@ jobs:
 
       - name: Build
         run: dotnet build Cinder.MINT.sln -c Release --no-restore
+
+      - name: Routing safety checks
+        run: dotnet run --project .\tests\Cinder.MINT.RoutingChecks\Cinder.MINT.RoutingChecks.csproj -c Release
 
       - name: Publish self-contained Windows app
         if: github.event_name == 'push'
@@ -87,7 +76,8 @@ jobs:
           - Sidechains remain control-only and are never added to the audible path.
           - Duplicate input and output endpoint assignments are blocked.
           - Virtual cable pair conflicts and cross-output endpoint cycles are blocked before start.
-          - Sustained full-scale runaway output is muted by a runtime feedback guard.
+          - Sustained full-scale runaway output is muted and stopped without automatic restart.
+          - Added executable routing safety checks to CI.
 
           Test notes:
           - Extract into a fresh folder before launching Cinder.MINT.App.exe.
