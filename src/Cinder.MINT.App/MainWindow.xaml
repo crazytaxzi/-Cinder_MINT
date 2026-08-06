@@ -145,7 +145,7 @@
                                     <TextBox Text="{Binding SelectedNode.Title, UpdateSourceTrigger=PropertyChanged}"/>
                                     <CheckBox Content="Enabled" IsChecked="{Binding SelectedNode.Enabled}" Margin="0,10,0,0"/>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -172,7 +172,7 @@
                                         <TextBlock Text="{Binding SelectedNode.LatencyMs, StringFormat={}{0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -194,7 +194,7 @@
                                         <TextBlock Text="{Binding SelectedNode.LatencyMs, StringFormat={}{0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -209,7 +209,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.InputGainDb, StringFormat={}{0:F1} dB}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -229,7 +229,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.GateReleaseMs, StringFormat={}{0:F0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -244,7 +244,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.HighPassHz, StringFormat={}{0:F0} Hz}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -260,7 +260,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.DeEsserAmount, StringFormat={}{0:P0}}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -282,7 +282,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.HighGainDb, StringFormat={}{0:F1} dB}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -302,7 +302,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.RiderSpeedMs, StringFormat={}{0:F0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -324,7 +324,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.CompressorReleaseMs, StringFormat={}{0:F0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -351,7 +351,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.DuckerReleaseMs, StringFormat={}{0:F0} ms}" HorizontalAlignment="Right"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
@@ -366,7 +366,7 @@
                                                    TextWrapping="Wrap" Style="{StaticResource TinyLabel}" Margin="0,5,0,0"/>
                                     </StackPanel>
 
-                                    <StackPanel Style="{StaticResource InspectorSection}">
+                                    <StackPanel>
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
                                                 <Style.Triggers>
