@@ -597,6 +597,7 @@ public sealed class AudioGraphModel
     {
         var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var path = new List<string>();
+        List<string> foundCycle = [];
 
         bool Visit(string key)
         {
@@ -614,7 +615,7 @@ public sealed class AudioGraphModel
                     else if (targetState == 1)
                     {
                         int start = path.FindIndex(x => string.Equals(x, target, StringComparison.OrdinalIgnoreCase));
-                        cycle = path.Skip(Math.Max(0, start)).Append(target).ToList();
+                        foundCycle = path.Skip(Math.Max(0, start)).Append(target).ToList();
                         return true;
                     }
                 }
@@ -625,12 +626,16 @@ public sealed class AudioGraphModel
             return false;
         }
 
-        cycle = [];
         foreach (string key in edges.Keys)
         {
-            if (!state.ContainsKey(key) && Visit(key)) return true;
+            if (!state.ContainsKey(key) && Visit(key))
+            {
+                cycle = foundCycle;
+                return true;
+            }
         }
 
+        cycle = [];
         return false;
     }
 
