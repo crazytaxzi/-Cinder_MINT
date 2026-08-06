@@ -5,9 +5,9 @@ namespace Cinder.MINT.Audio.Dsp;
 public sealed class DspConfiguration
 {
     public required MintProfile Profile { get; init; }
-    public bool IsVoice { get; init; }
-    public bool IsProgram { get; init; }
-    public bool IsMaster { get; init; }
+    public bool IsVoice { get; set; }
+    public bool IsProgram { get; set; }
+    public bool IsMaster { get; set; }
 
     public bool GateEnabled { get; set; } = true;
     public bool HighPassEnabled { get; set; } = true;
