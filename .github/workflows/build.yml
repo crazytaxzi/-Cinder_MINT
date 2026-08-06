@@ -14,30 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fix read-only meter bindings
-        shell: pwsh
-        run: |
-          $path = ".\src\Cinder.MINT.App\MainWindow.xaml"
-          $content = Get-Content -Path $path -Raw
-          $content = $content.Replace('Value="{Binding VoiceMeter}"', 'Value="{Binding VoiceMeter, Mode=OneWay}"')
-          $content = $content.Replace('Value="{Binding ProgramMeter}"', 'Value="{Binding ProgramMeter, Mode=OneWay}"')
-          $content = $content.Replace('Value="{Binding MasterMeter}"', 'Value="{Binding MasterMeter, Mode=OneWay}"')
-          [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
-
-      - name: Commit binding hotfix
-        if: github.event_name == 'push'
-        shell: pwsh
-        run: |
-          $path = "src/Cinder.MINT.App/MainWindow.xaml"
-          git diff --quiet -- $path
-          if ($LASTEXITCODE -ne 0) {
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add $path
-            git commit -m "Fix one-way meter bindings"
-            git push origin HEAD:main
-          }
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
@@ -63,7 +39,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = "v0.1.0-alpha.2"
+          $version = "v0.1.0-alpha.3"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
 
@@ -76,37 +52,32 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.2]')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.3]')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.1.0-alpha.2"
+          $version = "v0.1.0-alpha.3"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           $target = (git rev-parse HEAD).Trim()
 
           @"
           # Cinder MINT $version
 
-          Startup hotfix for the first public test build.
+          Device dropdown visual hotfix for the public test build.
 
           Fixed:
-          - Meter ProgressBars now use explicit one-way bindings.
-          - Prevents WPF from attempting to write into the read-only VoiceMeter, ProgramMeter, and MasterMeter properties.
-          - Fixes the startup exception reported in v0.1.0-alpha.1.
-
-          Included:
-          - Voice, microphone, virtual-device, and RVC output cleanup lane
-          - Music and application audio lane through Windows/VB-Audio endpoints
-          - Adaptive level riding, de-essing, EQ, compression, ducking, and limiting
-          - Draggable visual signal graph
-          - Cinder Stream neon interface
-          - Saved presets, endpoint recovery, and feedback-loop protection
+          - Replaced the light Windows ComboBox popup palette with the Cinder dark theme.
+          - Added readable normal, hover, selected, and disabled device-item states.
+          - Limited dropdown height and disabled useless horizontal scrolling.
+          - Darkened popup and scrollbar system resources for consistent contrast.
+          - Includes the alpha.2 one-way meter binding startup fix.
 
           Test notes:
-          - Extract the ZIP before launching Cinder.MINT.App.exe.
+          - Extract the ZIP into a fresh folder before launching Cinder.MINT.App.exe.
+          - Device lists should now remain readable instead of showing white text on a white popup.
           - Route RVC or application audio through dedicated VB-Cable endpoints for clean isolation.
-          - This remains an early prerelease. Report the exact dialog or behavior if another gremlin crawls out.
+          - This remains an early prerelease. Screenshots of ugly or broken behavior are extremely useful.
           "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
 
           gh release create $version $zip `
