@@ -13,6 +13,77 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Normalize endpoint cycle detector
+        shell: pwsh
+        run: |
+          $path = ".\src\Cinder.MINT.App\Models\AudioGraphModel.cs"
+          $content = Get-Content -Path $path -Raw
+          $pattern = '(?s)    private static bool TryFindEndpointCycle\(.*?\n    public static AudioGraphModel CreateDefault\(\)'
+          $replacement = @'
+    private static bool TryFindEndpointCycle(
+        IReadOnlyDictionary<string, HashSet<string>> edges,
+        out List<string> cycle)
+    {
+        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var path = new List<string>();
+        List<string> foundCycle = [];
+
+        bool Visit(string key)
+        {
+            state[key] = 1;
+            path.Add(key);
+
+            if (edges.TryGetValue(key, out HashSet<string>? targets))
+            {
+                foreach (string target in targets)
+                {
+                    if (!state.TryGetValue(target, out int targetState))
+                    {
+                        if (Visit(target)) return true;
+                    }
+                    else if (targetState == 1)
+                    {
+                        int start = path.FindIndex(x => string.Equals(x, target, StringComparison.OrdinalIgnoreCase));
+                        foundCycle = path.Skip(Math.Max(0, start)).Append(target).ToList();
+                        return true;
+                    }
+                }
+            }
+
+            path.RemoveAt(path.Count - 1);
+            state[key] = 2;
+            return false;
+        }
+
+        foreach (string key in edges.Keys)
+        {
+            if (!state.ContainsKey(key) && Visit(key))
+            {
+                cycle = foundCycle;
+                return true;
+            }
+        }
+
+        cycle = [];
+        return false;
+    }
+
+    public static AudioGraphModel CreateDefault()
+'@
+          $updated = [regex]::Replace($content, $pattern, $replacement)
+          if ($updated -eq $content) {
+            throw "Endpoint cycle detector patch did not match."
+          }
+          [System.IO.File]::WriteAllText($path, $updated, [System.Text.UTF8Encoding]::new($false))
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add $path
+          git commit -m "Fix endpoint cycle detector closure"
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -39,7 +110,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = "v0.1.0-alpha.4"
+          $version = "v0.1.0-alpha.5"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
 
@@ -52,35 +123,34 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.4]')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.5]')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.1.0-alpha.4"
+          $version = "v0.1.0-alpha.5"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           $target = (git rev-parse HEAD).Trim()
 
           @"
           # Cinder MINT $version
 
-          Free-form patchbay rebuild.
+          Routing isolation and feedback safety release.
 
           Changed:
-          - Removed the fixed voice/music sidebars.
-          - Inputs, processors, mix buses and outputs are now movable nodes.
-          - Drag sockets to create cables; right-click a socket to disconnect it.
-          - Split outputs, combine unlimited signals in a mix bus and choose processor order freely.
-          - Added a dedicated sidechain input and real sidechain ducker.
-          - Node settings now open beside the selected node instead of living in a permanent sidebar.
-          - Saves node positions, cables, endpoint choices and processor settings.
-          - Replaced the entire ComboBox face so collapsed endpoint selectors stay dark and readable.
+          - Every input node now owns one isolated capture domain.
+          - Split branches receive independent synchronized buffers.
+          - Audible signals can only combine inside an explicit MIX BUS.
+          - Sidechains remain control-only and are never added to the audible path.
+          - Duplicate input and output endpoint assignments are blocked.
+          - Virtual cable pair conflicts and cross-output endpoint cycles are blocked before start.
+          - Sustained full-scale runaway output is muted by a runtime feedback guard.
 
           Test notes:
           - Extract into a fresh folder before launching Cinder.MINT.App.exe.
-          - Double-click a processor to bypass it; Delete removes the selected node.
-          - Graph edits made while live require stopping and restarting MINT to rebuild the realtime chain.
-          - This remains an early prerelease. Screenshots and exact errors are useful.
+          - Use one INPUT node per endpoint; split its OUT socket for parallel processing.
+          - Merge signals into one MIX BUS before sending them to a shared OUTPUT endpoint.
+          - External software can still create a loop after startup; use distinct virtual buses in each direction.
           "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
 
           gh release create $version $zip `
