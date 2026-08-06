@@ -16,72 +16,13 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Normalize endpoint cycle detector
+      - name: Apply endpoint cycle source fix
         shell: pwsh
         run: |
-          $path = ".\src\Cinder.MINT.App\Models\AudioGraphModel.cs"
-          $content = Get-Content -Path $path -Raw
-          $pattern = '(?s)    private static bool TryFindEndpointCycle\(.*?\n    public static AudioGraphModel CreateDefault\(\)'
-          $replacement = @'
-    private static bool TryFindEndpointCycle(
-        IReadOnlyDictionary<string, HashSet<string>> edges,
-        out List<string> cycle)
-    {
-        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var path = new List<string>();
-        List<string> foundCycle = [];
-
-        bool Visit(string key)
-        {
-            state[key] = 1;
-            path.Add(key);
-
-            if (edges.TryGetValue(key, out HashSet<string>? targets))
-            {
-                foreach (string target in targets)
-                {
-                    if (!state.TryGetValue(target, out int targetState))
-                    {
-                        if (Visit(target)) return true;
-                    }
-                    else if (targetState == 1)
-                    {
-                        int start = path.FindIndex(x => string.Equals(x, target, StringComparison.OrdinalIgnoreCase));
-                        foundCycle = path.Skip(Math.Max(0, start)).Append(target).ToList();
-                        return true;
-                    }
-                }
-            }
-
-            path.RemoveAt(path.Count - 1);
-            state[key] = 2;
-            return false;
-        }
-
-        foreach (string key in edges.Keys)
-        {
-            if (!state.ContainsKey(key) && Visit(key))
-            {
-                cycle = foundCycle;
-                return true;
-            }
-        }
-
-        cycle = [];
-        return false;
-    }
-
-    public static AudioGraphModel CreateDefault()
-'@
-          $updated = [regex]::Replace($content, $pattern, $replacement)
-          if ($updated -eq $content) {
-            throw "Endpoint cycle detector patch did not match."
-          }
-          [System.IO.File]::WriteAllText($path, $updated, [System.Text.UTF8Encoding]::new($false))
-
+          python .\tools\fix_endpoint_cycle.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add $path
+          git add .\src\Cinder.MINT.App\Models\AudioGraphModel.cs
           git commit -m "Fix endpoint cycle detector closure"
           git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
