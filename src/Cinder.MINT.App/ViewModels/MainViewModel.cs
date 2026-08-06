@@ -1,13 +1,18 @@
 using Cinder.MINT.Audio;
-using Cinder.MINT.Audio.Dsp;
 using Cinder.MINT.Models;
 using Cinder.MINT.Services;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 
 namespace Cinder.MINT.ViewModels;
+
+public sealed record NodePaletteItem(AudioNodeType Type, string Label)
+{
+    public override string ToString() => Label;
+}
 
 public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
@@ -16,50 +21,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly AudioEngine _engine;
     private readonly DispatcherTimer _meterTimer;
     private readonly DispatcherTimer _watchdogTimer;
-    private MintSettings _settings;
+    private readonly DispatcherTimer _saveTimer;
+    private readonly MintSettings _settings;
 
-    private AudioEndpointChoice? _selectedVoiceSource;
-    private AudioEndpointChoice? _selectedProgramSource;
-    private AudioEndpointChoice? _selectedOutput;
-    private string _selectedVoicePreset = "Natural Broadcast";
-    private string _selectedProgramPreset = "Music Safe";
-    private string _statusText = "READY — choose sources and output";
+    private AudioGraphModel _graph;
+    private AudioNodeModel? _selectedNode;
+    private NodePaletteItem _selectedPaletteItem;
+    private string _statusText = "READY — patch sockets, choose endpoints, then start";
     private bool _isRunning;
     private double _voiceMeter;
     private double _programMeter;
     private double _masterMeter;
     private bool _autoStart;
-    private int _latencyMs = 30;
     private bool _restartPending;
+    private bool _loading;
 
     public MainViewModel()
     {
         _engine = new AudioEngine(_deviceService);
         _engine.Faulted += OnEngineFaulted;
         _settings = _settingsService.Load();
+        _graph = _settingsService.RestoreGraph(_settings);
 
-        VoiceProfile = MintProfiles.Voice["Natural Broadcast"].Clone();
-        ProgramProfile = MintProfiles.Program["Music Safe"].Clone();
-        MasterProfile = new MintProfile
-        {
-            Name = "Master",
-            AutoMode = false,
-            LimiterCeilingDb = -1,
-            Compression = 0
-        };
+        NodePalette =
+        [
+            new(AudioNodeType.Input, "Audio input"),
+            new(AudioNodeType.Gain, "Gain / trim"),
+            new(AudioNodeType.NoiseGate, "Smart gate"),
+            new(AudioNodeType.HighPass, "Rumble cut"),
+            new(AudioNodeType.DeEsser, "De-esser"),
+            new(AudioNodeType.Equalizer, "Equalizer"),
+            new(AudioNodeType.LevelRider, "Level rider"),
+            new(AudioNodeType.Compressor, "Compressor"),
+            new(AudioNodeType.Ducker, "Sidechain ducker"),
+            new(AudioNodeType.Mixer, "Mix bus"),
+            new(AudioNodeType.Limiter, "Limiter"),
+            new(AudioNodeType.Output, "Audio output")
+        ];
+        _selectedPaletteItem = NodePalette[0];
 
-        Graph = AudioGraphModel.CreateDefault();
-        RefreshDevices();
-
-        SelectedVoicePreset = MintProfiles.Voice.ContainsKey(_settings.VoicePreset)
-            ? _settings.VoicePreset
-            : "Natural Broadcast";
-        SelectedProgramPreset = MintProfiles.Program.ContainsKey(_settings.ProgramPreset)
-            ? _settings.ProgramPreset
-            : "Music Safe";
-
+        AttachGraph(_graph);
         AutoStart = _settings.AutoStart;
-        LatencyMs = Math.Clamp(_settings.LatencyMs, 10, 120);
+        RefreshDevices();
 
         _meterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _meterTimer.Tick += (_, _) => UpdateMeters();
@@ -68,59 +71,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _watchdogTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _watchdogTimer.Tick += (_, _) => RunWatchdog();
         _watchdogTimer.Start();
+
+        _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        _saveTimer.Tick += (_, _) =>
+        {
+            _saveTimer.Stop();
+            SaveNow();
+        };
     }
 
-    public ObservableCollection<AudioEndpointChoice> VoiceSources { get; } = [];
-    public ObservableCollection<AudioEndpointChoice> ProgramSources { get; } = [];
+    public ObservableCollection<AudioEndpointChoice> Sources { get; } = [];
     public ObservableCollection<AudioEndpointChoice> Outputs { get; } = [];
+    public IReadOnlyList<NodePaletteItem> NodePalette { get; }
     public IReadOnlyList<string> VoicePresetNames => MintProfiles.Voice.Keys.ToList();
     public IReadOnlyList<string> ProgramPresetNames => MintProfiles.Program.Keys.ToList();
 
-    public AudioGraphModel Graph { get; }
-    public MintProfile VoiceProfile { get; }
-    public MintProfile ProgramProfile { get; }
-    public MintProfile MasterProfile { get; }
-
-    public AudioEndpointChoice? SelectedVoiceSource
+    public AudioGraphModel Graph
     {
-        get => _selectedVoiceSource;
-        set { SetField(ref _selectedVoiceSource, value); SaveSettings(); }
-    }
-
-    public AudioEndpointChoice? SelectedProgramSource
-    {
-        get => _selectedProgramSource;
-        set { SetField(ref _selectedProgramSource, value); SaveSettings(); }
-    }
-
-    public AudioEndpointChoice? SelectedOutput
-    {
-        get => _selectedOutput;
-        set { SetField(ref _selectedOutput, value); SaveSettings(); }
-    }
-
-    public string SelectedVoicePreset
-    {
-        get => _selectedVoicePreset;
-        set
+        get => _graph;
+        private set
         {
-            if (!SetField(ref _selectedVoicePreset, value)) return;
-            if (MintProfiles.Voice.TryGetValue(value, out MintProfile? profile))
-                VoiceProfile.CopyFrom(profile);
-            SaveSettings();
+            if (ReferenceEquals(_graph, value)) return;
+            DetachGraph(_graph);
+            _graph = value;
+            AttachGraph(_graph);
+            OnPropertyChanged();
         }
     }
 
-    public string SelectedProgramPreset
+    public AudioNodeModel? SelectedNode
     {
-        get => _selectedProgramPreset;
-        set
-        {
-            if (!SetField(ref _selectedProgramPreset, value)) return;
-            if (MintProfiles.Program.TryGetValue(value, out MintProfile? profile))
-                ProgramProfile.CopyFrom(profile);
-            SaveSettings();
-        }
+        get => _selectedNode;
+        set => SetField(ref _selectedNode, value);
+    }
+
+    public NodePaletteItem SelectedPaletteItem
+    {
+        get => _selectedPaletteItem;
+        set => SetField(ref _selectedPaletteItem, value);
     }
 
     public string StatusText { get => _statusText; private set => SetField(ref _statusText, value); }
@@ -132,81 +120,120 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool AutoStart
     {
         get => _autoStart;
-        set { SetField(ref _autoStart, value); SaveSettings(); }
-    }
-
-    public int LatencyMs
-    {
-        get => _latencyMs;
-        set { SetField(ref _latencyMs, value); SaveSettings(); }
+        set
+        {
+            if (!SetField(ref _autoStart, value)) return;
+            _settings.AutoStart = value;
+            ScheduleSave(false);
+        }
     }
 
     public void RefreshDevices()
     {
-        string? voiceId = SelectedVoiceSource?.Id ?? _settings.VoiceSourceId;
-        string? programId = SelectedProgramSource?.Id ?? _settings.ProgramSourceId;
-        string? outputId = SelectedOutput?.Id ?? _settings.OutputId;
+        _loading = true;
+        try
+        {
+            Replace(Sources, _deviceService.GetVoiceSources());
+            Replace(Outputs, _deviceService.GetOutputs());
 
-        Replace(VoiceSources, _deviceService.GetVoiceSources());
-        Replace(ProgramSources, _deviceService.GetProgramSources());
-        Replace(Outputs, _deviceService.GetOutputs());
+            foreach (AudioNodeModel node in Graph.Nodes)
+            {
+                string? endpointId = node.Endpoint?.Id ?? node.SavedEndpointId;
 
-        SelectedVoiceSource = VoiceSources.FirstOrDefault(x => x.Id == voiceId) ?? VoiceSources.FirstOrDefault();
-        SelectedProgramSource = ProgramSources.FirstOrDefault(x => x.Id == programId) ?? ProgramSources.FirstOrDefault();
-        SelectedOutput = Outputs.FirstOrDefault(x => x.Id == outputId) ?? Outputs.FirstOrDefault();
+                if (node.Type == AudioNodeType.Input)
+                {
+                    AudioEndpointChoice? endpoint = Sources.FirstOrDefault(x => x.Id == endpointId);
+                    if (endpoint is null && endpointId is null)
+                    {
+                        endpoint = node.IsVoiceActivitySource
+                            ? Sources.FirstOrDefault(x => x.Kind == EndpointSourceKind.Capture) ?? Sources.FirstOrDefault()
+                            : Sources.FirstOrDefault(x => x.Kind == EndpointSourceKind.RenderLoopback) ?? Sources.FirstOrDefault();
+                    }
+                    node.Endpoint = endpoint;
+                    if (endpoint is null) node.SavedEndpointId = endpointId;
+                }
+                else if (node.Type == AudioNodeType.Output)
+                {
+                    AudioEndpointChoice? endpoint = Outputs.FirstOrDefault(x => x.Id == endpointId);
+                    if (endpoint is null && endpointId is null)
+                    {
+                        HashSet<string> loopbackIds = Graph.Nodes
+                            .Where(x => x.Type == AudioNodeType.Input && x.Endpoint?.Kind == EndpointSourceKind.RenderLoopback)
+                            .Select(x => x.Endpoint!.Id)
+                            .ToHashSet();
+                        endpoint = Outputs.FirstOrDefault(x => !loopbackIds.Contains(x.Id)) ?? Outputs.FirstOrDefault();
+                    }
+                    node.Endpoint = endpoint;
+                    if (endpoint is null) node.SavedEndpointId = endpointId;
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
 
-        StatusText = $"READY — {VoiceSources.Count} voice/RVC sources, {ProgramSources.Count} loopback sources";
+        ScheduleSave(false);
+        StatusText = $"READY — {Sources.Count} available inputs, {Outputs.Count} available outputs";
+    }
+
+    public AudioNodeModel AddSelectedNode()
+    {
+        int index = Graph.Nodes.Count;
+        double x = 70 + (index % 7) * 220;
+        double y = 520 + (index / 7) * 150;
+        AudioNodeModel node = Graph.AddNode(SelectedPaletteItem.Type, x, y);
+
+        _loading = true;
+        try
+        {
+            if (node.Type == AudioNodeType.Input)
+                node.Endpoint = Sources.FirstOrDefault(x => x.Kind == EndpointSourceKind.Capture) ?? Sources.FirstOrDefault();
+            else if (node.Type == AudioNodeType.Output)
+                node.Endpoint = Outputs.FirstOrDefault();
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        SelectedNode = node;
+        NotifyGraphChanged($"Added {node.Title}", true);
+        return node;
+    }
+
+    public void DeleteNode(AudioNodeModel node)
+    {
+        Graph.RemoveNode(node);
+        if (ReferenceEquals(SelectedNode, node)) SelectedNode = null;
+        NotifyGraphChanged($"Deleted {node.Title}", true);
+    }
+
+    public void ResetGraph()
+    {
+        Stop();
+        _loading = true;
+        try
+        {
+            Graph = AudioGraphModel.CreateDefault();
+            SelectedNode = null;
+            RefreshDevices();
+        }
+        finally
+        {
+            _loading = false;
+        }
+        NotifyGraphChanged("Restored the starter patch", false);
     }
 
     public void Start()
     {
-        if (SelectedVoiceSource is null || SelectedProgramSource is null || SelectedOutput is null)
-            throw new InvalidOperationException("Choose a voice/RVC source, music/app source, and output.");
-
-        var voiceConfig = new DspConfiguration
-        {
-            Profile = VoiceProfile,
-            IsVoice = true
-        };
-
-        var programConfig = new DspConfiguration
-        {
-            Profile = ProgramProfile,
-            IsProgram = true,
-            GateEnabled = false,
-            HighPassEnabled = false,
-            DeEsserEnabled = false
-        };
-
-        var masterConfig = new DspConfiguration
-        {
-            Profile = MasterProfile,
-            IsMaster = true,
-            GateEnabled = false,
-            HighPassEnabled = false,
-            DeEsserEnabled = false,
-            EqEnabled = false,
-            RiderEnabled = false,
-            CompressorEnabled = false,
-            DuckerEnabled = false,
-            LimiterEnabled = true
-        };
-
-        ApplyGraphBypass(voiceConfig, programConfig, masterConfig);
-
-        _engine.Start(
-            SelectedVoiceSource,
-            SelectedProgramSource,
-            SelectedOutput,
-            voiceConfig,
-            programConfig,
-            masterConfig,
-            LatencyMs);
-
+        _engine.Start(Graph);
         IsRunning = true;
         _restartPending = false;
-        StatusText = $"LIVE — mastering to {SelectedOutput.Name}";
-        SaveSettings();
+        int outputCount = Graph.Nodes.Count(x => x.Type == AudioNodeType.Output && Graph.Incoming(x).Count > 0);
+        StatusText = $"LIVE — running {Graph.Nodes.Count} nodes into {outputCount} output{(outputCount == 1 ? string.Empty : "s")}";
+        SaveNow();
     }
 
     public void Stop()
@@ -214,37 +241,120 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _engine.Stop();
         IsRunning = false;
         _restartPending = false;
-        StatusText = "STOPPED — routing is safe";
+        StatusText = "STOPPED — graph editing is safe";
     }
 
-    public void ToggleNode(AudioNodeModel node)
+    public void ToggleNode(AudioNodeModel node) =>
+        NotifyGraphChanged(node.Enabled ? $"{node.Title} enabled" : $"{node.Title} bypassed", true);
+
+    public void SelectNode(AudioNodeModel? node) => SelectedNode = node;
+
+    public void NotifyGraphChanged(string message, bool requiresRestart)
     {
-        StatusText = node.Enabled
-            ? $"{node.Title} enabled — restart MINT to rebuild the lane"
-            : $"{node.Title} bypassed — restart MINT to rebuild the lane";
-        _restartPending = IsRunning;
+        if (_loading) return;
+        ScheduleSave(requiresRestart);
+
+        if (IsRunning && requiresRestart)
+        {
+            _restartPending = true;
+            StatusText = $"EDITED — {message}; restart MINT to rebuild the patch";
+        }
+        else
+        {
+            StatusText = message;
+        }
     }
 
-    private void ApplyGraphBypass(
-        DspConfiguration voice,
-        DspConfiguration program,
-        DspConfiguration master)
+    public void ApplyVoicePreset(string presetName)
     {
-        bool Enabled(AudioNodeType type, int occurrence = 0) =>
-            Graph.Nodes.Where(x => x.Type == type).Skip(occurrence).FirstOrDefault()?.Enabled ?? true;
+        if (SelectedNode is null || !MintProfiles.Voice.TryGetValue(presetName, out MintProfile? profile)) return;
+        SelectedNode.Profile.CopyFrom(profile);
+        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", true);
+    }
 
-        voice.GateEnabled = Enabled(AudioNodeType.NoiseGate);
-        voice.HighPassEnabled = Enabled(AudioNodeType.HighPass);
-        voice.DeEsserEnabled = Enabled(AudioNodeType.DeEsser);
-        voice.EqEnabled = Enabled(AudioNodeType.Equalizer, 0);
-        voice.CompressorEnabled = Enabled(AudioNodeType.Compressor, 0);
+    public void ApplyProgramPreset(string presetName)
+    {
+        if (SelectedNode is null || !MintProfiles.Program.TryGetValue(presetName, out MintProfile? profile)) return;
+        SelectedNode.Profile.CopyFrom(profile);
+        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", true);
+    }
 
-        program.RiderEnabled = Enabled(AudioNodeType.LevelRider);
-        program.EqEnabled = Enabled(AudioNodeType.Equalizer, 1);
-        program.CompressorEnabled = Enabled(AudioNodeType.Compressor, 1);
-        program.DuckerEnabled = Enabled(AudioNodeType.Ducker);
+    private void AttachGraph(AudioGraphModel graph)
+    {
+        graph.Nodes.CollectionChanged += GraphNodesChanged;
+        graph.Connections.CollectionChanged += GraphConnectionsChanged;
+        foreach (AudioNodeModel node in graph.Nodes) AttachNode(node);
+    }
 
-        master.LimiterEnabled = Enabled(AudioNodeType.Limiter);
+    private void DetachGraph(AudioGraphModel graph)
+    {
+        graph.Nodes.CollectionChanged -= GraphNodesChanged;
+        graph.Connections.CollectionChanged -= GraphConnectionsChanged;
+        foreach (AudioNodeModel node in graph.Nodes) DetachNode(node);
+    }
+
+    private void GraphNodesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (AudioNodeModel node in e.OldItems) DetachNode(node);
+        if (e.NewItems is not null)
+            foreach (AudioNodeModel node in e.NewItems) AttachNode(node);
+        if (!_loading) ScheduleSave(true);
+    }
+
+    private void GraphConnectionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (!_loading) ScheduleSave(true);
+    }
+
+    private void AttachNode(AudioNodeModel node)
+    {
+        node.PropertyChanged += NodePropertyChanged;
+        node.Profile.PropertyChanged += ProfilePropertyChanged;
+    }
+
+    private void DetachNode(AudioNodeModel node)
+    {
+        node.PropertyChanged -= NodePropertyChanged;
+        node.Profile.PropertyChanged -= ProfilePropertyChanged;
+    }
+
+    private void NodePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_loading) return;
+        bool layoutOnly = e.PropertyName is nameof(AudioNodeModel.X) or nameof(AudioNodeModel.Y);
+        ScheduleSave(!layoutOnly);
+        if (!layoutOnly && IsRunning)
+        {
+            _restartPending = true;
+            StatusText = "EDITED — restart MINT to apply node changes";
+        }
+    }
+
+    private void ProfilePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_loading) return;
+        ScheduleSave(true);
+        if (IsRunning)
+        {
+            _restartPending = true;
+            StatusText = "EDITED — restart MINT to apply processor changes";
+        }
+    }
+
+    private void ScheduleSave(bool requiresRestart)
+    {
+        if (_loading) return;
+        if (requiresRestart && IsRunning) _restartPending = true;
+        if (_saveTimer is null) return;
+        _saveTimer.Stop();
+        _saveTimer.Start();
+    }
+
+    private void SaveNow()
+    {
+        _settings.AutoStart = AutoStart;
+        _settingsService.Save(_settings, Graph);
     }
 
     private void OnEngineFaulted(object? sender, string message)
@@ -265,11 +375,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             RefreshDevices();
             Start();
-            StatusText = "RECOVERED — devices reconnected";
+            StatusText = "RECOVERED — devices reconnected and graph rebuilt";
         }
         catch (Exception ex)
         {
-            StatusText = $"WAITING FOR DEVICE — {ex.Message}";
+            StatusText = $"WAITING — {ex.Message}";
         }
     }
 
@@ -283,20 +393,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private static double MeterPercent(float db) =>
         Math.Clamp((db + 60f) / 60f * 100f, 0f, 100f);
 
-    private void SaveSettings()
-    {
-        if (_settings is null) return;
-
-        _settings.VoiceSourceId = SelectedVoiceSource?.Id;
-        _settings.ProgramSourceId = SelectedProgramSource?.Id;
-        _settings.OutputId = SelectedOutput?.Id;
-        _settings.VoicePreset = SelectedVoicePreset;
-        _settings.ProgramPreset = SelectedProgramPreset;
-        _settings.AutoStart = AutoStart;
-        _settings.LatencyMs = LatencyMs;
-        _settingsService.Save(_settings);
-    }
-
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> items)
     {
         target.Clear();
@@ -305,8 +401,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        _saveTimer.Stop();
         _meterTimer.Stop();
         _watchdogTimer.Stop();
+        SaveNow();
+        DetachGraph(Graph);
         _engine.Dispose();
     }
 
@@ -316,7 +415,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        OnPropertyChanged(name);
         return true;
     }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

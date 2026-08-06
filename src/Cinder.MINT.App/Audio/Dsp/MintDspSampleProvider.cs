@@ -61,13 +61,15 @@ public sealed class MintDspSampleProvider : ISampleProvider
         float peak = 0f;
         double sumSquares = 0;
 
-        float gateRelease = Coefficient(0.11f, sampleRate);
-        float compAttack = Coefficient(0.008f, sampleRate);
-        float compRelease = Coefficient(0.16f, sampleRate);
-        float riderCoeff = Coefficient(_config.IsProgram ? 1.2f : 0.65f, sampleRate);
-        float duckAttack = Coefficient(0.035f, sampleRate);
-        float duckRelease = Coefficient(0.55f, sampleRate);
-        float limiterRelease = Coefficient(0.08f, sampleRate);
+        float gateRelease = Coefficient(Milliseconds(p.GateReleaseMs, 30f, 600f), sampleRate);
+        float compAttack = Coefficient(Milliseconds(p.CompressorAttackMs, 1f, 100f), sampleRate);
+        float compRelease = Coefficient(Milliseconds(p.CompressorReleaseMs, 30f, 1000f), sampleRate);
+        float riderSeconds = Milliseconds(p.RiderSpeedMs, 250f, 3000f);
+        float riderEnvelopeCoefficient = Coefficient(riderSeconds, sampleRate);
+        float riderGainCoefficient = Coefficient(Math.Clamp(riderSeconds * 0.35f, 0.08f, 1.2f), sampleRate);
+        float duckAttack = Coefficient(Milliseconds(p.DuckerAttackMs, 1f, 500f), sampleRate);
+        float duckRelease = Coefficient(Milliseconds(p.DuckerReleaseMs, 20f, 3000f), sampleRate);
+        float limiterRelease = Coefficient(Milliseconds(p.LimiterReleaseMs, 10f, 1000f), sampleRate);
 
         for (int i = 0; i < read; i++)
         {
@@ -90,7 +92,10 @@ public sealed class MintDspSampleProvider : ISampleProvider
                     ? Math.Max(p.GateThresholdDb, _noiseFloorDb + 7f)
                     : p.GateThresholdDb;
                 float threshold = DbToLinear(thresholdDb);
-                float target = absolute >= threshold ? 1f : Math.Clamp(absolute / Math.Max(threshold, 0.000001f), 0.08f, 1f);
+                float target = absolute >= threshold
+                    ? 1f
+                    : Math.Clamp(absolute / Math.Max(threshold, 0.000001f), 0.08f, 1f);
+
                 _gateEnvelope = target > _gateEnvelope
                     ? target
                     : gateRelease * _gateEnvelope + (1f - gateRelease) * target;
@@ -113,19 +118,28 @@ public sealed class MintDspSampleProvider : ISampleProvider
                 float trigger = 0.055f - Math.Clamp(p.DeEsserAmount, 0f, 1f) * 0.028f;
                 if (_deEssEnvelope > trigger)
                 {
-                    float reduction = 1f - Math.Clamp((_deEssEnvelope - trigger) * 8f * p.DeEsserAmount, 0f, 0.42f);
+                    float reduction = 1f - Math.Clamp(
+                        (_deEssEnvelope - trigger) * 8f * p.DeEsserAmount,
+                        0f,
+                        0.42f);
                     sample *= reduction;
                 }
             }
 
             absolute = Math.Abs(sample);
-            _riderEnvelope = riderCoeff * _riderEnvelope + (1f - riderCoeff) * absolute;
+            _riderEnvelope = riderEnvelopeCoefficient * _riderEnvelope
+                             + (1f - riderEnvelopeCoefficient) * absolute;
 
             if (_config.RiderEnabled && !_config.IsMaster)
             {
                 float target = DbToLinear(p.TargetDb);
-                float desiredGain = Math.Clamp(target / Math.Max(_riderEnvelope * 1.35f, 0.0001f), 0.35f, _config.IsProgram ? 2.0f : 2.8f);
-                _riderGain = 0.9994f * _riderGain + 0.0006f * desiredGain;
+                float desiredGain = Math.Clamp(
+                    target / Math.Max(_riderEnvelope * 1.35f, 0.0001f),
+                    0.35f,
+                    _config.IsProgram ? 2.0f : 2.8f);
+
+                _riderGain = riderGainCoefficient * _riderGain
+                             + (1f - riderGainCoefficient) * desiredGain;
                 sample *= _riderGain;
             }
 
@@ -147,20 +161,27 @@ public sealed class MintDspSampleProvider : ISampleProvider
                 }
             }
 
+            // Retained for legacy configurations. New graphs normally use the dedicated
+            // SidechainDuckerSampleProvider with an explicit SIDECHAIN socket.
             if (_config.DuckerEnabled && _config.IsProgram)
             {
                 float activity = _levels.VoiceActivity;
-                float desiredDuck = activity > 0.18f ? DbToLinear(p.DuckingDb) : 1f;
-                float coeff = desiredDuck < _duckGain ? duckAttack : duckRelease;
-                _duckGain = coeff * _duckGain + (1f - coeff) * desiredDuck;
+                float desiredDuck = activity > DbToLinear(p.DuckerThresholdDb)
+                    ? DbToLinear(p.DuckingDb)
+                    : 1f;
+                float coefficient = desiredDuck < _duckGain ? duckAttack : duckRelease;
+                _duckGain = coefficient * _duckGain + (1f - coefficient) * desiredDuck;
                 sample *= _duckGain;
             }
 
             if (_config.LimiterEnabled)
             {
-                float ceiling = DbToLinear(p.LimiterCeilingDb);
+                float ceiling = DbToLinear(Math.Clamp(p.LimiterCeilingDb, -12f, -0.1f));
                 absolute = Math.Abs(sample);
-                float desired = absolute > ceiling ? ceiling / Math.Max(absolute, 0.000001f) : 1f;
+                float desired = absolute > ceiling
+                    ? ceiling / Math.Max(absolute, 0.000001f)
+                    : 1f;
+
                 _limiterGain = desired < _limiterGain
                     ? desired
                     : limiterRelease * _limiterGain + (1f - limiterRelease);
@@ -196,6 +217,9 @@ public sealed class MintDspSampleProvider : ISampleProvider
 
     private static BiQuadFilter[] Create(int count, Func<BiQuadFilter> factory) =>
         Enumerable.Range(0, count).Select(_ => factory()).ToArray();
+
+    private static float Milliseconds(float milliseconds, float minimum, float maximum) =>
+        Math.Clamp(milliseconds, minimum, maximum) / 1000f;
 
     private static float Coefficient(float seconds, int sampleRate) =>
         MathF.Exp(-1f / Math.Max(1f, seconds * sampleRate));

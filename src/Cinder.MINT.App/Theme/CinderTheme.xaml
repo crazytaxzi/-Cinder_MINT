@@ -23,7 +23,6 @@
     <SolidColorBrush x:Key="HotBrush" Color="{StaticResource CinderHot}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource CinderWarning}"/>
 
-    <!-- WPF's stock ComboBox popup otherwise falls back to the light Windows palette. -->
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="{StaticResource CinderPanelRaised}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="{StaticResource CinderPanelRaised}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="{StaticResource CinderText}"/>
@@ -38,6 +37,7 @@
 
     <DropShadowEffect x:Key="GreenGlow" Color="{StaticResource CinderGreen}" BlurRadius="18" ShadowDepth="0" Opacity="0.28"/>
     <DropShadowEffect x:Key="PurpleGlow" Color="{StaticResource CinderPurple}" BlurRadius="18" ShadowDepth="0" Opacity="0.28"/>
+    <DropShadowEffect x:Key="PopupShadow" Color="#000000" BlurRadius="26" ShadowDepth="8" Opacity="0.65"/>
 
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource BackgroundBrush}"/>
@@ -55,6 +55,13 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="14"/>
         <Setter Property="Padding" Value="16"/>
+    </Style>
+
+    <Style x:Key="InspectorCard" TargetType="Border" BasedOn="{StaticResource PanelCard}">
+        <Setter Property="Background" Value="#F20E1019"/>
+        <Setter Property="BorderBrush" Value="{StaticResource PurpleBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="Effect" Value="{StaticResource PopupShadow}"/>
     </Style>
 
     <Style TargetType="Button">
@@ -100,16 +107,102 @@
         <Setter Property="Effect" Value="{StaticResource GreenGlow}"/>
     </Style>
 
-    <Style TargetType="ComboBox">
+    <Style TargetType="TextBox">
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="CaretBrush" Value="{StaticResource GreenBrush}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource PurpleBrush}"/>
+    </Style>
+
+    <Style TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="10,7,34,7"/>
         <Setter Property="MaxDropDownHeight" Value="360"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <Border x:Name="Face"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <Grid>
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Stretch"
+                                                  Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"
+                                                  IsHitTestVisible="False"/>
+                                <Border Width="30" HorizontalAlignment="Right" Background="#161925" CornerRadius="0,6,6,0">
+                                    <Path Data="M 0 0 L 5 5 L 10 0 Z"
+                                          Fill="{StaticResource GreenBrush}"
+                                          Width="10" Height="5"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <ToggleButton Focusable="False"
+                                      ClickMode="Press"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="Transparent"/>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+
+                        <Popup x:Name="PART_Popup"
+                               Placement="Bottom"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Fade">
+                            <Border MinWidth="{Binding ActualWidth, ElementName=Face}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                    Margin="0,4,0,0"
+                                    Background="{StaticResource RaisedBrush}"
+                                    BorderBrush="{StaticResource PurpleBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Effect="{StaticResource PopupShadow}">
+                                <ScrollViewer Margin="1"
+                                              CanContentScroll="True"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Face" Property="BorderBrush" Value="{StaticResource GreenBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Face" Property="BorderBrush" Value="{StaticResource PurpleBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Face" Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="ComboBoxItem">

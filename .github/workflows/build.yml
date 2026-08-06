@@ -39,7 +39,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = "v0.1.0-alpha.3"
+          $version = "v0.1.0-alpha.4"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
 
@@ -52,32 +52,35 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.3]')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.4]')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.1.0-alpha.3"
+          $version = "v0.1.0-alpha.4"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           $target = (git rev-parse HEAD).Trim()
 
           @"
           # Cinder MINT $version
 
-          Device dropdown visual hotfix for the public test build.
+          Free-form patchbay rebuild.
 
-          Fixed:
-          - Replaced the light Windows ComboBox popup palette with the Cinder dark theme.
-          - Added readable normal, hover, selected, and disabled device-item states.
-          - Limited dropdown height and disabled useless horizontal scrolling.
-          - Darkened popup and scrollbar system resources for consistent contrast.
-          - Includes the alpha.2 one-way meter binding startup fix.
+          Changed:
+          - Removed the fixed voice/music sidebars.
+          - Inputs, processors, mix buses and outputs are now movable nodes.
+          - Drag sockets to create cables; right-click a socket to disconnect it.
+          - Split outputs, combine unlimited signals in a mix bus and choose processor order freely.
+          - Added a dedicated sidechain input and real sidechain ducker.
+          - Node settings now open beside the selected node instead of living in a permanent sidebar.
+          - Saves node positions, cables, endpoint choices and processor settings.
+          - Replaced the entire ComboBox face so collapsed endpoint selectors stay dark and readable.
 
           Test notes:
-          - Extract the ZIP into a fresh folder before launching Cinder.MINT.App.exe.
-          - Device lists should now remain readable instead of showing white text on a white popup.
-          - Route RVC or application audio through dedicated VB-Cable endpoints for clean isolation.
-          - This remains an early prerelease. Screenshots of ugly or broken behavior are extremely useful.
+          - Extract into a fresh folder before launching Cinder.MINT.App.exe.
+          - Double-click a processor to bypass it; Delete removes the selected node.
+          - Graph edits made while live require stopping and restarting MINT to rebuild the realtime chain.
+          - This remains an early prerelease. Screenshots and exact errors are useful.
           "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
 
           gh release create $version $zip `
