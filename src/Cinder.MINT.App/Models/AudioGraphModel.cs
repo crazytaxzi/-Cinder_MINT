@@ -240,10 +240,7 @@ public sealed class AudioGraphModel
         Nodes.Remove(node);
     }
 
-    public bool TryConnect(
-        AudioPortModel first,
-        AudioPortModel second,
-        out string error)
+    public bool TryConnect(AudioPortModel first, AudioPortModel second, out string error)
     {
         AudioPortModel sourcePort = first.Direction == AudioPortDirection.Output ? first : second;
         AudioPortModel targetPort = first.Direction == AudioPortDirection.Input ? first : second;
@@ -364,6 +361,8 @@ public sealed class AudioGraphModel
 
     public bool Validate(out string error)
     {
+        if (!ValidateConnectionIntegrity(out error)) return false;
+
         if (HasCycle())
         {
             error = "The patch contains an audio cycle. Remove the cable feeding back upstream.";
@@ -387,23 +386,94 @@ public sealed class AudioGraphModel
                 error = $"Choose an audio endpoint inside the {output.Title} node.";
                 return false;
             }
+        }
+
+        IGrouping<string, AudioNodeModel>? duplicateOutput = outputs
+            .GroupBy(x => x.Endpoint!.Id, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicateOutput is not null)
+        {
+            error = $"Multiple OUTPUT nodes are writing to {duplicateOutput.First().Endpoint!.Name}. Merge those chains first, then use one OUTPUT node.";
+            return false;
+        }
+
+        HashSet<Guid> activeInputIds = outputs
+            .SelectMany(GetUpstreamNodeIds)
+            .ToHashSet();
+
+        List<AudioNodeModel> activeInputs = Nodes
+            .Where(x => x.Type == AudioNodeType.Input && activeInputIds.Contains(x.Id))
+            .ToList();
+
+        foreach (AudioNodeModel input in activeInputs)
+        {
+            if (input.Endpoint is null)
+            {
+                error = $"Choose an audio endpoint inside the {input.Title} node.";
+                return false;
+            }
+        }
+
+        IGrouping<string, AudioNodeModel>? duplicateInput = activeInputs
+            .GroupBy(x => x.Endpoint!.Id, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicateInput is not null)
+        {
+            error = $"{duplicateInput.First().Endpoint!.Name} is assigned to more than one active INPUT node. Use one INPUT node and split its OUT socket so the source remains explicit and synchronized.";
+            return false;
+        }
+
+        IGrouping<string, AudioNodeModel>? duplicateVirtualInput = activeInputs
+            .Where(x => x.Endpoint!.VirtualRoutingFamily is not null)
+            .GroupBy(x => x.Endpoint!.RoutingSafetyKey, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicateVirtualInput is not null)
+        {
+            error = $"Multiple active INPUT nodes belong to the same virtual routing family ({duplicateVirtualInput.First().Endpoint!.Name}). Use a single input node and split it inside MINT.";
+            return false;
+        }
+
+        var endpointEdges = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var endpointLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (AudioNodeModel output in outputs)
+        {
+            AudioEndpointChoice outputEndpoint = output.Endpoint!;
+            string outputKey = outputEndpoint.RoutingSafetyKey;
+            endpointLabels[outputKey] = outputEndpoint.Name;
 
             HashSet<Guid> upstream = GetUpstreamNodeIds(output);
-            foreach (AudioNodeModel source in Nodes.Where(x => upstream.Contains(x.Id) && x.Type == AudioNodeType.Input))
+            foreach (AudioNodeModel input in activeInputs.Where(x => upstream.Contains(x.Id)))
             {
-                if (source.Endpoint is null)
+                AudioEndpointChoice inputEndpoint = input.Endpoint!;
+
+                if (inputEndpoint.ConflictsWithOutput(outputEndpoint))
                 {
-                    error = $"Choose an audio endpoint inside the {source.Title} node.";
+                    error = $"{input.Title} can hear the same virtual route used by {output.Title}. MINT blocked the route before it could feed itself.";
                     return false;
                 }
 
-                if (source.Endpoint.Kind == EndpointSourceKind.RenderLoopback &&
-                    source.Endpoint.Id == output.Endpoint.Id)
+                if (!inputEndpoint.CanReceiveRenderedAudio) continue;
+
+                string inputKey = inputEndpoint.RoutingSafetyKey;
+                endpointLabels[inputKey] = inputEndpoint.Name;
+                if (!endpointEdges.TryGetValue(inputKey, out HashSet<string>? targets))
                 {
-                    error = $"{source.Title} is listening to the same endpoint used by {output.Title}. That would feed MINT into itself.";
-                    return false;
+                    targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    endpointEdges[inputKey] = targets;
                 }
+                targets.Add(outputKey);
             }
+        }
+
+        if (TryFindEndpointCycle(endpointEdges, out List<string> cycle))
+        {
+            string path = string.Join(" → ", cycle.Select(key => endpointLabels.TryGetValue(key, out string? label) ? label : key));
+            error = $"The selected endpoints form an external audio loop: {path}. Use a different virtual endpoint for one leg.";
+            return false;
         }
 
         error = string.Empty;
@@ -427,6 +497,55 @@ public sealed class AudioGraphModel
         }
 
         return result;
+    }
+
+    private bool ValidateConnectionIntegrity(out string error)
+    {
+        foreach (AudioConnectionModel connection in Connections)
+        {
+            AudioNodeModel? sourceNode = SourceNode(connection);
+            AudioNodeModel? targetNode = TargetNode(connection);
+            AudioPortModel? sourcePort = GetPort(connection.SourcePortId);
+            AudioPortModel? targetPort = GetPort(connection.TargetPortId);
+
+            if (sourceNode is null || targetNode is null || sourcePort is null || targetPort is null)
+            {
+                error = "The patch contains a cable connected to a missing node or socket.";
+                return false;
+            }
+
+            if (sourcePort.Direction != AudioPortDirection.Output || targetPort.Direction != AudioPortDirection.Input)
+            {
+                error = "The patch contains a cable connected in the wrong direction.";
+                return false;
+            }
+        }
+
+        foreach (AudioNodeModel node in Nodes)
+        {
+            foreach (AudioPortModel input in node.Inputs)
+            {
+                int count = Connections.Count(x => x.TargetPortId == input.Id);
+                if (count > 1 && !input.AllowsMultipleConnections)
+                {
+                    error = $"{node.Title} · {input.Name} has more than one cable. Only MIX BUS inputs may sum audible signals.";
+                    return false;
+                }
+            }
+
+            int audibleInputPorts = node.Inputs
+                .Where(port => port.Kind == AudioPortKind.Audio)
+                .Count(port => Connections.Any(connection => connection.TargetPortId == port.Id));
+
+            if (node.Type != AudioNodeType.Mixer && audibleInputPorts > 1)
+            {
+                error = $"{node.Title} is implicitly combining audio. Route those signals through an explicit MIX BUS first.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     private bool WouldCreateCycle(Guid sourceNodeId, Guid targetNodeId)
@@ -470,6 +589,49 @@ public sealed class AudioGraphModel
         }
 
         return Nodes.Any(node => Visit(node.Id));
+    }
+
+    private static bool TryFindEndpointCycle(
+        IReadOnlyDictionary<string, HashSet<string>> edges,
+        out List<string> cycle)
+    {
+        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var path = new List<string>();
+
+        bool Visit(string key)
+        {
+            state[key] = 1;
+            path.Add(key);
+
+            if (edges.TryGetValue(key, out HashSet<string>? targets))
+            {
+                foreach (string target in targets)
+                {
+                    if (!state.TryGetValue(target, out int targetState))
+                    {
+                        if (Visit(target)) return true;
+                    }
+                    else if (targetState == 1)
+                    {
+                        int start = path.FindIndex(x => string.Equals(x, target, StringComparison.OrdinalIgnoreCase));
+                        cycle = path.Skip(Math.Max(0, start)).Append(target).ToList();
+                        return true;
+                    }
+                }
+            }
+
+            path.RemoveAt(path.Count - 1);
+            state[key] = 2;
+            return false;
+        }
+
+        cycle = [];
+        foreach (string key in edges.Keys)
+        {
+            if (!state.ContainsKey(key) && Visit(key)) return true;
+        }
+
+        return false;
     }
 
     public static AudioGraphModel CreateDefault()
