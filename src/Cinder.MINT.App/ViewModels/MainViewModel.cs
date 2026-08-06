@@ -359,8 +359,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnEngineFaulted(object? sender, string message)
     {
-        App.Current.Dispatcher.Invoke(() =>
+        bool feedbackGuard = message.StartsWith(
+            "FEEDBACK GUARD",
+            StringComparison.OrdinalIgnoreCase);
+
+        App.Current.Dispatcher.BeginInvoke(() =>
         {
+            if (feedbackGuard)
+            {
+                _engine.Stop();
+                IsRunning = false;
+                _restartPending = false;
+                StatusText = $"SAFETY STOP — {message}";
+                return;
+            }
+
             IsRunning = false;
             _restartPending = AutoStart;
             StatusText = $"RECOVERING — {message}";
