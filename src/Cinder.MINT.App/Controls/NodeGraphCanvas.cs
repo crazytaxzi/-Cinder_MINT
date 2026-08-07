@@ -344,6 +344,7 @@ public sealed class NodeGraphCanvas : FrameworkElement
         if (node.Type == AudioNodeType.Input) return "SOURCE";
         if (node.Type == AudioNodeType.Output) return "OUT";
         if (node.Type == AudioNodeType.Mixer) return "BUS";
+        if (node.Type == AudioNodeType.AiProcessor) return "AI";
         if (node.Profile.AutoMode &&
             node.Type is AudioNodeType.NoiseGate or AudioNodeType.DeEsser or AudioNodeType.LevelRider)
             return "AUTO";
@@ -595,6 +596,7 @@ public sealed class NodeGraphCanvas : FrameworkElement
         AudioNodeType.Output => Aqua,
         AudioNodeType.Limiter => Pink,
         AudioNodeType.Mixer => Gold,
+        AudioNodeType.AiProcessor => Aqua,
         AudioNodeType.Ducker => Pink,
         _ => Purple
     };

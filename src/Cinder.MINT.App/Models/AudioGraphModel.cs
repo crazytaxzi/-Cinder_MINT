@@ -8,6 +8,7 @@ namespace Cinder.MINT.Models;
 public enum AudioNodeType
 {
     Input,
+    AiProcessor,
     Gain,
     NoiseGate,
     HighPass,
@@ -53,6 +54,11 @@ public sealed class AudioNodeModel : INotifyPropertyChanged
     private string? _savedEndpointId;
     private bool _isVoiceActivitySource;
     private int _latencyMs = 30;
+    private MintAiSpecialist _aiSpecialist = MintAiSpecialist.Cleanup;
+    private string _aiState = "WAITING";
+    private string _aiHeard = "waiting for audio";
+    private string _aiAction = "no decision yet";
+    private float _aiConfidence;
 
     public AudioNodeModel(AudioNodeType type, string title, string subtitle, Guid? id = null)
     {
@@ -114,6 +120,37 @@ public sealed class AudioNodeModel : INotifyPropertyChanged
     {
         get => _latencyMs;
         set => SetField(ref _latencyMs, Math.Clamp(value, 10, 150));
+    }
+
+    public MintAiSpecialist AiSpecialist
+    {
+        get => _aiSpecialist;
+        set
+        {
+            if (!SetField(ref _aiSpecialist, value)) return;
+            if (Type == AudioNodeType.AiProcessor)
+            {
+                Title = $"AI {value.ToString().ToUpperInvariant()}";
+                Subtitle = SpecialistSubtitle(value);
+            }
+        }
+    }
+
+    public string AiState { get => _aiState; private set => SetField(ref _aiState, value); }
+    public string AiHeard { get => _aiHeard; private set => SetField(ref _aiHeard, value); }
+    public string AiAction { get => _aiAction; private set => SetField(ref _aiAction, value); }
+    public float AiConfidence { get => _aiConfidence; private set => SetField(ref _aiConfidence, Math.Clamp(value, 0f, 1f)); }
+    public string AiConfidenceText => $"{AiConfidence:P0} confidence";
+
+    public bool IsAiNode => Type == AudioNodeType.AiProcessor;
+
+    public void ApplyAiTelemetry(string state, string heard, string action, float confidence)
+    {
+        AiState = state;
+        AiHeard = heard;
+        AiAction = action;
+        AiConfidence = confidence;
+        OnPropertyChanged(nameof(AiConfidenceText));
     }
 
     public double X
@@ -184,6 +221,16 @@ public sealed class AudioNodeModel : INotifyPropertyChanged
             Kind = kind,
             AllowsMultipleConnections = allowsMultiple
         };
+
+    private static string SpecialistSubtitle(MintAiSpecialist specialist) => specialist switch
+    {
+        MintAiSpecialist.Cleanup => "noise • RVC artifacts • plosives • sibilance",
+        MintAiSpecialist.Tone => "spectral balance • body • presence • harshness",
+        MintAiSpecialist.Dynamics => "compression • transient preservation • consistency",
+        MintAiSpecialist.Loudness => "slow level riding • loudness stability",
+        MintAiSpecialist.Master => "post-mix glue • tone • protected ceiling",
+        _ => "local neural audio controller"
+    };
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -647,39 +694,65 @@ public sealed class AudioGraphModel
         voice.IsVoiceActivitySource = true;
         voice.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
 
-        AudioNodeModel gate = graph.AddNode(AudioNodeType.NoiseGate, 250, 78);
-        AudioNodeModel highPass = graph.AddNode(AudioNodeType.HighPass, 470, 78);
-        AudioNodeModel deEsser = graph.AddNode(AudioNodeType.DeEsser, 690, 78);
-        AudioNodeModel voiceEq = graph.AddNode(AudioNodeType.Equalizer, 910, 78, "VOICE EQ");
-        AudioNodeModel voiceComp = graph.AddNode(AudioNodeType.Compressor, 1130, 78, "VOICE COMP");
+        AudioNodeModel cleanup = graph.AddNode(AudioNodeType.AiProcessor, 270, 78);
+        cleanup.AiSpecialist = MintAiSpecialist.Cleanup;
+        cleanup.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
 
-        AudioNodeModel program = graph.AddNode(AudioNodeType.Input, 30, 286, "APP / MUSIC INPUT");
+        AudioNodeModel voiceTone = graph.AddNode(AudioNodeType.AiProcessor, 510, 78);
+        voiceTone.AiSpecialist = MintAiSpecialist.Tone;
+        voiceTone.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
+
+        AudioNodeModel voiceDynamics = graph.AddNode(AudioNodeType.AiProcessor, 750, 78);
+        voiceDynamics.AiSpecialist = MintAiSpecialist.Dynamics;
+        voiceDynamics.Profile.CopyFrom(MintProfiles.Voice["Streaming Strong"]);
+
+        AudioNodeModel voiceLoudness = graph.AddNode(AudioNodeType.AiProcessor, 990, 78);
+        voiceLoudness.AiSpecialist = MintAiSpecialist.Loudness;
+        voiceLoudness.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
+
+        AudioNodeModel program = graph.AddNode(AudioNodeType.Input, 30, 310, "APP / MUSIC INPUT");
         program.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
-        AudioNodeModel rider = graph.AddNode(AudioNodeType.LevelRider, 250, 286);
-        AudioNodeModel programEq = graph.AddNode(AudioNodeType.Equalizer, 470, 286, "PROGRAM EQ");
-        AudioNodeModel programComp = graph.AddNode(AudioNodeType.Compressor, 690, 286, "PROGRAM COMP");
-        AudioNodeModel ducker = graph.AddNode(AudioNodeType.Ducker, 910, 286);
 
-        AudioNodeModel mixer = graph.AddNode(AudioNodeType.Mixer, 1350, 190, "STREAM BUS");
-        AudioNodeModel limiter = graph.AddNode(AudioNodeType.Limiter, 1570, 190, "MASTER LIMITER");
-        AudioNodeModel output = graph.AddNode(AudioNodeType.Output, 1790, 190, "STREAM OUTPUT");
+        AudioNodeModel programTone = graph.AddNode(AudioNodeType.AiProcessor, 270, 310);
+        programTone.AiSpecialist = MintAiSpecialist.Tone;
+        programTone.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
 
-        Connect(graph, voice, "OUT", gate, "IN");
-        Connect(graph, gate, "OUT", highPass, "IN");
-        Connect(graph, highPass, "OUT", deEsser, "IN");
-        Connect(graph, deEsser, "OUT", voiceEq, "IN");
-        Connect(graph, voiceEq, "OUT", voiceComp, "IN");
-        Connect(graph, voiceComp, "OUT", mixer, "MIX IN");
+        AudioNodeModel programDynamics = graph.AddNode(AudioNodeType.AiProcessor, 510, 310);
+        programDynamics.AiSpecialist = MintAiSpecialist.Dynamics;
+        programDynamics.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
 
-        Connect(graph, program, "OUT", rider, "IN");
-        Connect(graph, rider, "OUT", programEq, "IN");
-        Connect(graph, programEq, "OUT", programComp, "IN");
-        Connect(graph, programComp, "OUT", ducker, "MAIN");
-        Connect(graph, voiceComp, "OUT", ducker, "SIDECHAIN");
+        AudioNodeModel programLoudness = graph.AddNode(AudioNodeType.AiProcessor, 750, 310);
+        programLoudness.AiSpecialist = MintAiSpecialist.Loudness;
+        programLoudness.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
+
+        AudioNodeModel ducker = graph.AddNode(AudioNodeType.Ducker, 990, 310);
+
+        AudioNodeModel mixer = graph.AddNode(AudioNodeType.Mixer, 1260, 190, "STREAM BUS");
+
+        AudioNodeModel master = graph.AddNode(AudioNodeType.AiProcessor, 1500, 190);
+        master.AiSpecialist = MintAiSpecialist.Master;
+        master.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
+        master.Profile.AiContentMode = MintAiContentMode.Mixed;
+        master.Profile.AiTargetLoudnessDb = -16f;
+        master.Profile.AiMaxCorrectionDb = 4f;
+
+        AudioNodeModel output = graph.AddNode(AudioNodeType.Output, 1740, 190, "STREAM OUTPUT");
+
+        Connect(graph, voice, "OUT", cleanup, "IN");
+        Connect(graph, cleanup, "OUT", voiceTone, "IN");
+        Connect(graph, voiceTone, "OUT", voiceDynamics, "IN");
+        Connect(graph, voiceDynamics, "OUT", voiceLoudness, "IN");
+        Connect(graph, voiceLoudness, "OUT", mixer, "MIX IN");
+
+        Connect(graph, program, "OUT", programTone, "IN");
+        Connect(graph, programTone, "OUT", programDynamics, "IN");
+        Connect(graph, programDynamics, "OUT", programLoudness, "IN");
+        Connect(graph, programLoudness, "OUT", ducker, "MAIN");
+        Connect(graph, voiceLoudness, "OUT", ducker, "SIDECHAIN");
         Connect(graph, ducker, "OUT", mixer, "MIX IN");
 
-        Connect(graph, mixer, "OUT", limiter, "IN");
-        Connect(graph, limiter, "OUT", output, "IN");
+        Connect(graph, mixer, "OUT", master, "IN");
+        Connect(graph, master, "OUT", output, "IN");
 
         return graph;
     }
@@ -698,6 +771,7 @@ public sealed class AudioGraphModel
     private static (string Title, string Subtitle) Defaults(AudioNodeType type) => type switch
     {
         AudioNodeType.Input => ("AUDIO INPUT", "choose capture or loopback"),
+        AudioNodeType.AiProcessor => ("AI CLEANUP", "independent local neural controller"),
         AudioNodeType.Gain => ("GAIN / TRIM", "input level"),
         AudioNodeType.NoiseGate => ("SMART GATE", "adaptive noise floor"),
         AudioNodeType.HighPass => ("RUMBLE CUT", "high-pass / anti-plosive"),
@@ -716,6 +790,13 @@ public sealed class AudioGraphModel
     {
         switch (node.Type)
         {
+            case AudioNodeType.AiProcessor:
+                node.Profile.AutoMode = true;
+                node.Profile.AiContentMode = MintAiContentMode.Auto;
+                node.Profile.AiStrength = 0.72f;
+                node.Profile.AiNaturalness = 0.82f;
+                node.Profile.AiMaxCorrectionDb = 6f;
+                break;
             case AudioNodeType.NoiseGate:
                 node.Profile.GateThresholdDb = -52;
                 node.Profile.AutoMode = true;
