@@ -1,0 +1,66 @@
+name: Apply AI integration payload
+
+on:
+  push:
+    branches:
+      - feature/ai-specialist-brains
+    paths:
+      - '.github/workflows/apply-ai-integration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assemble AI integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Join-Payload([string]$pattern, [string]$target) {
+            $parts = Get-ChildItem $pattern | Sort-Object Name
+            if ($parts.Count -eq 0) { throw "No payload chunks matched $pattern" }
+            $content = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+            [System.IO.File]::WriteAllText((Join-Path $env:GITHUB_WORKSPACE $target), $content, [System.Text.UTF8Encoding]::new($false))
+            Write-Host "Assembled $target from $($parts.Count) chunk(s)"
+          }
+
+          Join-Payload '.ai-payload/AudioGraphModel.cs.part*' 'src/Cinder.MINT.App/Models/AudioGraphModel.cs'
+          Join-Payload '.ai-payload/SettingsService.cs.part*' 'src/Cinder.MINT.App/Services/SettingsService.cs'
+          Join-Payload '.ai-payload/AudioEngine.cs.part*' 'src/Cinder.MINT.App/Audio/AudioEngine.cs'
+          Join-Payload '.ai-payload/MainViewModel.cs.part*' 'src/Cinder.MINT.App/ViewModels/MainViewModel.cs'
+          Join-Payload '.ai-payload/MainWindow.xaml.part*' 'src/Cinder.MINT.App/MainWindow.xaml'
+          Join-Payload '.ai-payload/MintAiModels.cs.part*' 'src/Cinder.MINT.App/Audio/AI/MintAiModels.cs'
+
+          $canvasPath = 'src/Cinder.MINT.App/Controls/NodeGraphCanvas.cs'
+          $canvas = Get-Content $canvasPath -Raw
+          $oldBadge = '        if (node.Type == AudioNodeType.Mixer) return "BUS";'
+          $newBadge = "        if (node.Type == AudioNodeType.Mixer) return `"BUS`";`r`n        if (node.Type == AudioNodeType.AiProcessor) return `"AI`";"
+          if (-not $canvas.Contains($oldBadge)) { throw 'Node badge insertion anchor not found.' }
+          $canvas = $canvas.Replace($oldBadge, $newBadge)
+
+          $oldAccent = '        AudioNodeType.Mixer => Gold,'
+          $newAccent = "        AudioNodeType.Mixer => Gold,`r`n        AudioNodeType.AiProcessor => Aqua,"
+          if (-not $canvas.Contains($oldAccent)) { throw 'AI accent insertion anchor not found.' }
+          $canvas = $canvas.Replace($oldAccent, $newAccent)
+          [System.IO.File]::WriteAllText((Join-Path $env:GITHUB_WORKSPACE $canvasPath), $canvas, [System.Text.UTF8Encoding]::new($false))
+
+          $windowCodePath = 'src/Cinder.MINT.App/MainWindow.xaml.cs'
+          $windowCode = Get-Content $windowCodePath -Raw
+          $windowCode = $windowCode.Replace('double inspectorWidth = 350;', 'double inspectorWidth = 390;')
+          $windowCode = $windowCode.Replace('ActualHeight - 680', 'ActualHeight - 740')
+          [System.IO.File]::WriteAllText((Join-Path $env:GITHUB_WORKSPACE $windowCodePath), $windowCode, [System.Text.UTF8Encoding]::new($false))
+
+          git rm -r .ai-payload
+          git rm .github/workflows/apply-ai-integration.yml
+          git add src/Cinder.MINT.App
+          git config user.name 'Cinder MINT Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Integrate independent AI specialist brains'
+          git push origin HEAD:feature/ai-specialist-brains
