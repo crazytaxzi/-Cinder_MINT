@@ -148,7 +148,7 @@ public partial class MainWindow : Window
             RootGrid);
 
         double x = right.X;
-        double inspectorWidth = 350;
+        double inspectorWidth = 390;
         if (x + inspectorWidth > ActualWidth - 18)
         {
             Point left = GraphCanvas.TranslatePoint(
@@ -157,7 +157,7 @@ public partial class MainWindow : Window
             x = left.X;
         }
 
-        double maxY = Math.Max(12, ActualHeight - 680);
+        double maxY = Math.Max(12, ActualHeight - 740);
         InspectorPopup.HorizontalOffset = Math.Max(12, x);
         InspectorPopup.VerticalOffset = Math.Clamp(right.Y, 12, maxY);
     }

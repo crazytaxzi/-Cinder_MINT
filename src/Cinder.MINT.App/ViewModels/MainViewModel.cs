@@ -1,4 +1,5 @@
 using Cinder.MINT.Audio;
+using Cinder.MINT.Audio.AI;
 using Cinder.MINT.Models;
 using Cinder.MINT.Services;
 using System.Collections.ObjectModel;
@@ -46,26 +47,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         NodePalette =
         [
             new(AudioNodeType.Input, "Audio input"),
-            new(AudioNodeType.Gain, "Gain / trim"),
-            new(AudioNodeType.NoiseGate, "Smart gate"),
-            new(AudioNodeType.HighPass, "Rumble cut"),
-            new(AudioNodeType.DeEsser, "De-esser"),
-            new(AudioNodeType.Equalizer, "Equalizer"),
-            new(AudioNodeType.LevelRider, "Level rider"),
-            new(AudioNodeType.Compressor, "Compressor"),
-            new(AudioNodeType.Ducker, "Sidechain ducker"),
+            new(AudioNodeType.AiProcessor, "AI specialist"),
             new(AudioNodeType.Mixer, "Mix bus"),
-            new(AudioNodeType.Limiter, "Limiter"),
-            new(AudioNodeType.Output, "Audio output")
+            new(AudioNodeType.Ducker, "Sidechain ducker"),
+            new(AudioNodeType.Output, "Audio output"),
+            new(AudioNodeType.Gain, "Manual · gain / trim"),
+            new(AudioNodeType.NoiseGate, "Manual · smart gate"),
+            new(AudioNodeType.HighPass, "Manual · rumble cut"),
+            new(AudioNodeType.DeEsser, "Manual · de-esser"),
+            new(AudioNodeType.Equalizer, "Manual · equalizer"),
+            new(AudioNodeType.LevelRider, "Manual · level rider"),
+            new(AudioNodeType.Compressor, "Manual · compressor"),
+            new(AudioNodeType.Limiter, "Manual · limiter")
         ];
-        _selectedPaletteItem = NodePalette[0];
+        _selectedPaletteItem = NodePalette[1];
 
         AttachGraph(_graph);
         AutoStart = _settings.AutoStart;
         RefreshDevices();
 
-        _meterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        _meterTimer.Tick += (_, _) => UpdateMeters();
+        _meterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        _meterTimer.Tick += (_, _) => UpdateMetersAndBrains();
         _meterTimer.Start();
 
         _watchdogTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
@@ -83,6 +85,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<AudioEndpointChoice> Sources { get; } = [];
     public ObservableCollection<AudioEndpointChoice> Outputs { get; } = [];
     public IReadOnlyList<NodePaletteItem> NodePalette { get; }
+    public IReadOnlyList<MintAiSpecialist> AiSpecialists { get; } = Enum.GetValues<MintAiSpecialist>();
+    public IReadOnlyList<MintAiContentMode> AiContentModes { get; } = Enum.GetValues<MintAiContentMode>();
     public IReadOnlyList<string> VoicePresetNames => MintProfiles.Voice.Keys.ToList();
     public IReadOnlyList<string> ProgramPresetNames => MintProfiles.Program.Keys.ToList();
 
@@ -180,8 +184,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public AudioNodeModel AddSelectedNode()
     {
         int index = Graph.Nodes.Count;
-        double x = 70 + (index % 7) * 220;
-        double y = 520 + (index / 7) * 150;
+        double x = 70 + (index % 7) * 240;
+        double y = 540 + (index / 7) * 160;
         AudioNodeModel node = Graph.AddNode(SelectedPaletteItem.Type, x, y);
 
         _loading = true;
@@ -191,6 +195,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 node.Endpoint = Sources.FirstOrDefault(x => x.Kind == EndpointSourceKind.Capture) ?? Sources.FirstOrDefault();
             else if (node.Type == AudioNodeType.Output)
                 node.Endpoint = Outputs.FirstOrDefault();
+            else if (node.Type == AudioNodeType.AiProcessor)
+            {
+                node.AiSpecialist = MintAiSpecialist.Cleanup;
+                node.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
+            }
         }
         finally
         {
@@ -223,7 +232,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _loading = false;
         }
-        NotifyGraphChanged("Restored the starter patch", false);
+        NotifyGraphChanged("Restored the AI starter patch", false);
     }
 
     public void Start()
@@ -231,8 +240,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _engine.Start(Graph);
         IsRunning = true;
         _restartPending = false;
+        int aiCount = Graph.Nodes.Count(x => x.Type == AudioNodeType.AiProcessor && x.Enabled);
         int outputCount = Graph.Nodes.Count(x => x.Type == AudioNodeType.Output && Graph.Incoming(x).Count > 0);
-        StatusText = $"LIVE — running {Graph.Nodes.Count} nodes into {outputCount} output{(outputCount == 1 ? string.Empty : "s")}";
+        StatusText = $"LIVE — {aiCount} independent AI brain{(aiCount == 1 ? string.Empty : "s")} controlling {outputCount} output{(outputCount == 1 ? string.Empty : "s")}";
         SaveNow();
     }
 
@@ -241,6 +251,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _engine.Stop();
         IsRunning = false;
         _restartPending = false;
+        foreach (AudioNodeModel node in Graph.Nodes.Where(x => x.IsAiNode))
+            node.ApplyAiTelemetry("WAITING", "waiting for audio", "no decision yet", 0f);
         StatusText = "STOPPED — graph editing is safe";
     }
 
@@ -269,14 +281,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (SelectedNode is null || !MintProfiles.Voice.TryGetValue(presetName, out MintProfile? profile)) return;
         SelectedNode.Profile.CopyFrom(profile);
-        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", true);
+        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", false);
     }
 
     public void ApplyProgramPreset(string presetName)
     {
         if (SelectedNode is null || !MintProfiles.Program.TryGetValue(presetName, out MintProfile? profile)) return;
         SelectedNode.Profile.CopyFrom(profile);
-        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", true);
+        NotifyGraphChanged($"Applied {presetName} to {SelectedNode.Title}", false);
     }
 
     private void AttachGraph(AudioGraphModel graph)
@@ -322,24 +334,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void NodePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (_loading) return;
+
+        if (e.PropertyName is nameof(AudioNodeModel.AiState)
+            or nameof(AudioNodeModel.AiHeard)
+            or nameof(AudioNodeModel.AiAction)
+            or nameof(AudioNodeModel.AiConfidence)
+            or nameof(AudioNodeModel.AiConfidenceText))
+            return;
+
         bool layoutOnly = e.PropertyName is nameof(AudioNodeModel.X) or nameof(AudioNodeModel.Y);
-        ScheduleSave(!layoutOnly);
-        if (!layoutOnly && IsRunning)
+        bool liveNameOnly = e.PropertyName is nameof(AudioNodeModel.Title) or nameof(AudioNodeModel.Subtitle);
+        ScheduleSave(!layoutOnly && !liveNameOnly);
+
+        if (!layoutOnly && !liveNameOnly && IsRunning)
         {
             _restartPending = true;
-            StatusText = "EDITED — restart MINT to apply node changes";
+            StatusText = "EDITED — restart MINT to apply routing/node changes";
         }
     }
 
     private void ProfilePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (_loading) return;
-        ScheduleSave(true);
+
+        // DSP profiles and AI intent are read live by running providers.
+        ScheduleSave(false);
         if (IsRunning)
-        {
-            _restartPending = true;
-            StatusText = "EDITED — restart MINT to apply processor changes";
-        }
+            StatusText = "LIVE TUNE — AI intent / DSP guardrail updated";
     }
 
     private void ScheduleSave(bool requiresRestart)
@@ -396,11 +417,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private void UpdateMeters()
+    private void UpdateMetersAndBrains()
     {
         VoiceMeter = MeterPercent(_engine.Levels.VoicePeakDb);
         ProgramMeter = MeterPercent(_engine.Levels.ProgramPeakDb);
         MasterMeter = MeterPercent(_engine.Levels.MasterPeakDb);
+
+        IReadOnlyDictionary<Guid, AiBrainSnapshot> snapshots = _engine.GetAiSnapshots();
+        foreach (AudioNodeModel node in Graph.Nodes.Where(x => x.IsAiNode))
+        {
+            if (snapshots.TryGetValue(node.Id, out AiBrainSnapshot? snapshot))
+            {
+                node.ApplyAiTelemetry(
+                    snapshot.State,
+                    snapshot.Heard,
+                    snapshot.Action,
+                    snapshot.Confidence);
+            }
+        }
     }
 
     private static double MeterPercent(float db) =>

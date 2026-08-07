@@ -1,3 +1,4 @@
+using Cinder.MINT.Audio.AI;
 using Cinder.MINT.Audio.Dsp;
 using Cinder.MINT.Models;
 using NAudio.CoreAudioApi;
@@ -12,6 +13,7 @@ public sealed class AudioEngine : IDisposable
     private const int EngineChannels = 2;
 
     private readonly AudioDeviceService _devices;
+    private readonly MintAiRuntime _aiRuntime = new();
     private readonly Dictionary<Guid, InputCaptureHub> _inputHubs = [];
     private readonly List<WasapiOut> _outputs = [];
     private bool _disposed;
@@ -24,6 +26,9 @@ public sealed class AudioEngine : IDisposable
     public AudioLevelState Levels { get; } = new();
     public bool IsRunning { get; private set; }
     public event EventHandler<string>? Faulted;
+
+    public IReadOnlyDictionary<Guid, AiBrainSnapshot> GetAiSnapshots() =>
+        _aiRuntime.GetSnapshots();
 
     public void Start(AudioGraphModel graph)
     {
@@ -81,8 +86,6 @@ public sealed class AudioEngine : IDisposable
     {
         IsRunning = false;
 
-        // Silence outputs before tearing down capture domains. This prevents a
-        // partially disposed graph from being heard during shutdown.
         foreach (WasapiOut output in _outputs)
         {
             try { output.Stop(); } catch { }
@@ -95,6 +98,8 @@ public sealed class AudioEngine : IDisposable
         foreach (InputCaptureHub hub in _inputHubs.Values)
             hub.Dispose();
         _inputHubs.Clear();
+
+        _aiRuntime.Reset();
 
         Levels.VoiceActivity = 0;
         Levels.VoicePeakDb = -90;
@@ -142,8 +147,6 @@ public sealed class AudioEngine : IDisposable
             _inputHubs.Add(node.Id, hub);
         }
 
-        // Every branch receives its own buffer. The capture session is shared,
-        // but samples are never consumed from another branch's queue.
         ISampleProvider isolatedBranch = hub.CreateSubscriber();
         DspConfiguration config = EmptyConfiguration(
             node.Profile,
@@ -167,7 +170,6 @@ public sealed class AudioEngine : IDisposable
             .Select(connection => BuildConnectionSource(graph, connection, buildStack))
             .ToList();
 
-        // This is the only audible summing point in the engine.
         ISampleProvider mixed = providers.Count == 1
             ? providers[0]
             : new MixingSampleProvider(providers) { ReadFully = true };
@@ -191,7 +193,6 @@ public sealed class AudioEngine : IDisposable
         if (sidechainConnection is null)
             return main;
 
-        // The sidechain is analyzed only. It is never added to the audible MAIN path.
         ISampleProvider sidechain = BuildConnectionSource(graph, sidechainConnection, buildStack);
         return new SidechainDuckerSampleProvider(main, sidechain, node.Profile);
     }
@@ -203,6 +204,9 @@ public sealed class AudioEngine : IDisposable
     {
         ISampleProvider input = BuildSingleInput(graph, node, "IN", buildStack);
         if (!node.Enabled) return input;
+
+        if (node.Type == AudioNodeType.AiProcessor)
+            return new AiControlledSampleProvider(input, node, _aiRuntime, Levels);
 
         DspConfiguration config = EmptyConfiguration(node.Profile, false, false, false);
 

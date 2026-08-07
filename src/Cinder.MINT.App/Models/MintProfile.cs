@@ -3,6 +3,24 @@ using System.Runtime.CompilerServices;
 
 namespace Cinder.MINT.Models;
 
+public enum MintAiSpecialist
+{
+    Cleanup,
+    Tone,
+    Dynamics,
+    Loudness,
+    Master
+}
+
+public enum MintAiContentMode
+{
+    Auto,
+    Voice,
+    RvcVoice,
+    Music,
+    Mixed
+}
+
 public sealed class MintProfile : INotifyPropertyChanged
 {
     private string _name = "Custom";
@@ -27,6 +45,15 @@ public sealed class MintProfile : INotifyPropertyChanged
     private float _limiterCeilingDb = -1;
     private float _limiterReleaseMs = 80;
 
+    private MintAiContentMode _aiContentMode = MintAiContentMode.Auto;
+    private float _aiStrength = 0.72f;
+    private float _aiNaturalness = 0.82f;
+    private float _aiMaxCorrectionDb = 6f;
+    private float _aiPreserveTransients = 0.76f;
+    private float _aiConsistency = 0.72f;
+    private float _aiTargetLoudnessDb = -18f;
+    private float _aiAdaptation = 0.55f;
+
     public string Name { get => _name; set => SetField(ref _name, value); }
     public bool AutoMode { get => _autoMode; set => SetField(ref _autoMode, value); }
     public float InputGainDb { get => _inputGainDb; set => SetField(ref _inputGainDb, value); }
@@ -48,6 +75,15 @@ public sealed class MintProfile : INotifyPropertyChanged
     public float DuckerReleaseMs { get => _duckerReleaseMs; set => SetField(ref _duckerReleaseMs, value); }
     public float LimiterCeilingDb { get => _limiterCeilingDb; set => SetField(ref _limiterCeilingDb, value); }
     public float LimiterReleaseMs { get => _limiterReleaseMs; set => SetField(ref _limiterReleaseMs, value); }
+
+    public MintAiContentMode AiContentMode { get => _aiContentMode; set => SetField(ref _aiContentMode, value); }
+    public float AiStrength { get => _aiStrength; set => SetField(ref _aiStrength, Math.Clamp(value, 0f, 1f)); }
+    public float AiNaturalness { get => _aiNaturalness; set => SetField(ref _aiNaturalness, Math.Clamp(value, 0f, 1f)); }
+    public float AiMaxCorrectionDb { get => _aiMaxCorrectionDb; set => SetField(ref _aiMaxCorrectionDb, Math.Clamp(value, 1f, 12f)); }
+    public float AiPreserveTransients { get => _aiPreserveTransients; set => SetField(ref _aiPreserveTransients, Math.Clamp(value, 0f, 1f)); }
+    public float AiConsistency { get => _aiConsistency; set => SetField(ref _aiConsistency, Math.Clamp(value, 0f, 1f)); }
+    public float AiTargetLoudnessDb { get => _aiTargetLoudnessDb; set => SetField(ref _aiTargetLoudnessDb, Math.Clamp(value, -30f, -12f)); }
+    public float AiAdaptation { get => _aiAdaptation; set => SetField(ref _aiAdaptation, Math.Clamp(value, 0f, 1f)); }
 
     public MintProfile Clone() => (MintProfile)MemberwiseClone();
 
@@ -74,6 +110,14 @@ public sealed class MintProfile : INotifyPropertyChanged
         DuckerReleaseMs = source.DuckerReleaseMs;
         LimiterCeilingDb = source.LimiterCeilingDb;
         LimiterReleaseMs = source.LimiterReleaseMs;
+        AiContentMode = source.AiContentMode;
+        AiStrength = source.AiStrength;
+        AiNaturalness = source.AiNaturalness;
+        AiMaxCorrectionDb = source.AiMaxCorrectionDb;
+        AiPreserveTransients = source.AiPreserveTransients;
+        AiConsistency = source.AiConsistency;
+        AiTargetLoudnessDb = source.AiTargetLoudnessDb;
+        AiAdaptation = source.AiAdaptation;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -93,72 +137,39 @@ public static class MintProfiles
         {
             ["Natural Broadcast"] = new()
             {
-                Name = "Natural Broadcast",
-                AutoMode = true,
-                GateThresholdDb = -52,
-                GateReleaseMs = 135,
-                HighPassHz = 72,
-                DeEsserAmount = 0.28f,
-                LowGainDb = 0.5f,
-                MidGainDb = -0.5f,
-                HighGainDb = 0.7f,
-                TargetDb = -19,
-                RiderSpeedMs = 850,
-                Compression = 0.32f,
-                CompressorAttackMs = 10,
-                CompressorReleaseMs = 180
+                Name = "Natural Broadcast", AutoMode = true,
+                AiContentMode = MintAiContentMode.Voice, AiStrength = 0.62f, AiNaturalness = 0.90f,
+                AiMaxCorrectionDb = 5f, AiPreserveTransients = 0.82f, AiConsistency = 0.68f,
+                AiTargetLoudnessDb = -18f, GateThresholdDb = -52, GateReleaseMs = 135,
+                HighPassHz = 72, DeEsserAmount = 0.28f, TargetDb = -19, RiderSpeedMs = 850,
+                Compression = 0.32f, CompressorAttackMs = 10, CompressorReleaseMs = 180
             },
             ["RVC Cleanup"] = new()
             {
-                Name = "RVC Cleanup",
-                AutoMode = true,
-                GateThresholdDb = -56,
-                GateReleaseMs = 155,
-                HighPassHz = 68,
-                DeEsserAmount = 0.48f,
-                LowGainDb = -0.8f,
-                MidGainDb = -1.2f,
-                HighGainDb = -0.6f,
-                TargetDb = -18,
-                RiderSpeedMs = 750,
-                Compression = 0.42f,
-                CompressorAttackMs = 7,
-                CompressorReleaseMs = 145
+                Name = "RVC Cleanup", AutoMode = true,
+                AiContentMode = MintAiContentMode.RvcVoice, AiStrength = 0.78f, AiNaturalness = 0.88f,
+                AiMaxCorrectionDb = 6f, AiPreserveTransients = 0.80f, AiConsistency = 0.76f,
+                AiTargetLoudnessDb = -18f, GateThresholdDb = -56, GateReleaseMs = 155,
+                HighPassHz = 68, DeEsserAmount = 0.48f, TargetDb = -18, RiderSpeedMs = 750,
+                Compression = 0.42f, CompressorAttackMs = 7, CompressorReleaseMs = 145
             },
             ["Streaming Strong"] = new()
             {
-                Name = "Streaming Strong",
-                AutoMode = true,
-                GateThresholdDb = -46,
-                GateReleaseMs = 115,
-                HighPassHz = 82,
-                DeEsserAmount = 0.40f,
-                LowGainDb = 0.8f,
-                MidGainDb = 0.3f,
-                HighGainDb = 1.2f,
-                TargetDb = -17,
-                RiderSpeedMs = 650,
-                Compression = 0.55f,
-                CompressorAttackMs = 6,
-                CompressorReleaseMs = 130
+                Name = "Streaming Strong", AutoMode = true,
+                AiContentMode = MintAiContentMode.Voice, AiStrength = 0.84f, AiNaturalness = 0.70f,
+                AiMaxCorrectionDb = 7f, AiPreserveTransients = 0.68f, AiConsistency = 0.86f,
+                AiTargetLoudnessDb = -17f, GateThresholdDb = -46, GateReleaseMs = 115,
+                HighPassHz = 82, DeEsserAmount = 0.40f, TargetDb = -17, RiderSpeedMs = 650,
+                Compression = 0.55f, CompressorAttackMs = 6, CompressorReleaseMs = 130
             },
             ["Raw Rescue"] = new()
             {
-                Name = "Raw Rescue",
-                AutoMode = true,
-                InputGainDb = 3,
-                GateThresholdDb = -44,
-                GateReleaseMs = 170,
-                HighPassHz = 90,
-                DeEsserAmount = 0.55f,
-                LowGainDb = -1.5f,
-                MidGainDb = -2,
-                HighGainDb = 1,
-                TargetDb = -17,
-                RiderSpeedMs = 600,
-                Compression = 0.65f,
-                CompressorAttackMs = 5,
-                CompressorReleaseMs = 120
+                Name = "Raw Rescue", AutoMode = true,
+                AiContentMode = MintAiContentMode.Voice, AiStrength = 0.94f, AiNaturalness = 0.55f,
+                AiMaxCorrectionDb = 9f, AiPreserveTransients = 0.58f, AiConsistency = 0.88f,
+                AiTargetLoudnessDb = -17f, InputGainDb = 3, GateThresholdDb = -44, GateReleaseMs = 170,
+                HighPassHz = 90, DeEsserAmount = 0.55f, TargetDb = -17, RiderSpeedMs = 600,
+                Compression = 0.65f, CompressorAttackMs = 5, CompressorReleaseMs = 120
             }
         };
 
@@ -167,60 +178,35 @@ public static class MintProfiles
         {
             ["Music Safe"] = new()
             {
-                Name = "Music Safe",
-                AutoMode = true,
-                TargetDb = -22,
-                RiderSpeedMs = 1400,
-                Compression = 0.22f,
-                CompressorAttackMs = 18,
-                CompressorReleaseMs = 260,
-                DuckingDb = -6,
-                DuckerThresholdDb = -38,
-                DuckerAttackMs = 35,
-                DuckerReleaseMs = 550,
-                LimiterCeilingDb = -1
+                Name = "Music Safe", AutoMode = true,
+                AiContentMode = MintAiContentMode.Music, AiStrength = 0.52f, AiNaturalness = 0.95f,
+                AiMaxCorrectionDb = 4f, AiPreserveTransients = 0.94f, AiConsistency = 0.62f,
+                AiTargetLoudnessDb = -21f, TargetDb = -22, RiderSpeedMs = 1400,
+                Compression = 0.22f, CompressorAttackMs = 18, CompressorReleaseMs = 260, DuckingDb = -6
             },
             ["Game + Music"] = new()
             {
-                Name = "Game + Music",
-                AutoMode = true,
-                TargetDb = -20,
-                RiderSpeedMs = 1100,
-                Compression = 0.30f,
-                LowGainDb = -0.5f,
-                MidGainDb = -0.8f,
-                HighGainDb = -0.4f,
-                DuckingDb = -7,
-                DuckerThresholdDb = -40,
-                DuckerAttackMs = 28,
-                DuckerReleaseMs = 480
+                Name = "Game + Music", AutoMode = true,
+                AiContentMode = MintAiContentMode.Mixed, AiStrength = 0.65f, AiNaturalness = 0.86f,
+                AiMaxCorrectionDb = 5f, AiPreserveTransients = 0.84f, AiConsistency = 0.72f,
+                AiTargetLoudnessDb = -20f, TargetDb = -20, RiderSpeedMs = 1100,
+                Compression = 0.30f, DuckingDb = -7
             },
             ["Background Bed"] = new()
             {
-                Name = "Background Bed",
-                AutoMode = true,
-                TargetDb = -25,
-                RiderSpeedMs = 1700,
-                Compression = 0.38f,
-                MidGainDb = -1.5f,
-                DuckingDb = -9,
-                DuckerThresholdDb = -42,
-                DuckerAttackMs = 45,
-                DuckerReleaseMs = 700
+                Name = "Background Bed", AutoMode = true,
+                AiContentMode = MintAiContentMode.Music, AiStrength = 0.70f, AiNaturalness = 0.86f,
+                AiMaxCorrectionDb = 5f, AiPreserveTransients = 0.75f, AiConsistency = 0.86f,
+                AiTargetLoudnessDb = -24f, TargetDb = -25, RiderSpeedMs = 1700,
+                Compression = 0.38f, DuckingDb = -9
             },
             ["Punchy"] = new()
             {
-                Name = "Punchy",
-                AutoMode = false,
-                TargetDb = -19,
-                RiderSpeedMs = 900,
-                Compression = 0.48f,
-                CompressorAttackMs = 12,
-                CompressorReleaseMs = 190,
-                LowGainDb = 1,
-                MidGainDb = 0.5f,
-                HighGainDb = 0.7f,
-                DuckingDb = -5
+                Name = "Punchy", AutoMode = true,
+                AiContentMode = MintAiContentMode.Music, AiStrength = 0.74f, AiNaturalness = 0.64f,
+                AiMaxCorrectionDb = 6f, AiPreserveTransients = 0.88f, AiConsistency = 0.74f,
+                AiTargetLoudnessDb = -19f, TargetDb = -19, RiderSpeedMs = 900,
+                Compression = 0.48f, CompressorAttackMs = 12, CompressorReleaseMs = 190, DuckingDb = -5
             }
         };
 }

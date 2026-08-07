@@ -10,7 +10,7 @@ public sealed class MintSettings
     public bool AutoStart { get; set; }
     public AudioGraphSnapshot? Graph { get; set; }
 
-    // Kept for a one-time migration from the original fixed-lane builds.
+    // Kept for migration from the original fixed-lane builds.
     public string? VoiceSourceId { get; set; }
     public string? ProgramSourceId { get; set; }
     public string? OutputId { get; set; }
@@ -37,6 +37,7 @@ public sealed class AudioNodeSnapshot
     public string? EndpointId { get; set; }
     public bool IsVoiceActivitySource { get; set; }
     public int LatencyMs { get; set; } = 30;
+    public MintAiSpecialist AiSpecialist { get; set; } = MintAiSpecialist.Cleanup;
     public MintProfile Profile { get; set; } = new();
 }
 
@@ -101,6 +102,7 @@ public sealed class SettingsService
             node.SavedEndpointId = snapshot.EndpointId;
             node.IsVoiceActivitySource = snapshot.IsVoiceActivitySource;
             node.LatencyMs = snapshot.LatencyMs;
+            node.AiSpecialist = snapshot.AiSpecialist;
             node.Profile.CopyFrom(snapshot.Profile ?? new MintProfile());
         }
 
@@ -139,6 +141,7 @@ public sealed class SettingsService
                 EndpointId = node.Endpoint?.Id ?? node.SavedEndpointId,
                 IsVoiceActivitySource = node.IsVoiceActivitySource,
                 LatencyMs = node.LatencyMs,
+                AiSpecialist = node.AiSpecialist,
                 Profile = node.Profile.Clone()
             });
         }
