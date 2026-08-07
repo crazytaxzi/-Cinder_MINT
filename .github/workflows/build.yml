@@ -42,7 +42,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = "v0.1.0-alpha.8"
+          $version = "v0.1.0-alpha.9"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
 
@@ -55,35 +55,35 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.8]')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.9]')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.1.0-alpha.8"
+          $version = "v0.1.0-alpha.9"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           $target = (git rev-parse HEAD).Trim()
 
           @"
           # Cinder MINT $version
 
-          Built-in AI Noise Filter preview.
+          AI Noise Filter V2 — one-node-strength preview.
 
           Changed:
-          - Added AI Noise Filter: a dedicated compact neural specialist controlling a deterministic low-latency spectral suppressor.
-          - Uses 512-point sqrt-Hann overlap-add processing at 48 kHz with roughly 10.7 ms analysis latency.
-          - Exposes simple maximum reduction, sensitivity, speech/RVC protection, strength, naturalness, and adaptation intent controls.
-          - Starter voice/RVC route now runs AI Noise Filter before AI Cleanup, Tone, Dynamics, and Loudness.
-          - AI node shelf now exposes the specialist nodes directly instead of only a generic AI box.
-          - Neural control remains per-node and isolated; waveform processing remains deterministic and no audio is generated.
-          - Retains the alpha.7 realtime/UI thread-isolation fix plus all routing and feedback guards.
-          - CI validates neural control bounds and confirms AI Noise sits immediately upstream of AI Cleanup.
+          - Reworked the AI Noise Filter so stacking multiple noise nodes should not be necessary.
+          - Added a fast realtime VAD/noise-floor layer beneath the per-node neural controller.
+          - Added minimum-statistics spectral estimation and substantially stronger bounded spectral subtraction.
+          - Added a non-speech expander that can push room-tone rejection past 50 dB between words while protecting the voice band during speech.
+          - Added automatic dominant-channel handling for clearly mismatched stereo voice/RVC inputs.
+          - Neural observations remain detached from WPF/UI state and retain the alpha.7 thread-isolation fix.
+          - No audio generation: the neural brain controls deterministic DSP only.
+          - All routing, explicit-mix, endpoint-loop and runaway-feedback protections remain enabled.
 
           Test notes:
           - Extract into a fresh folder before launching Cinder.MINT.App.exe.
-          - Use RESET TO AI PATCH once if an older saved graph is restored.
-          - Start with AI Noise maximum reduction around 20-26 dB and speech protection around 85-90% for voice/RVC.
-          - Watch HEARD / DECISION telemetry while speaking and during room-noise-only periods.
+          - Use RESET TO AI PATCH if an older graph restores multiple AI Noise nodes.
+          - Test with ONE AI Noise node first. Set Maximum noise reduction to 36 dB, Noise sensitivity near 80-100%, and Protect speech/RVC around 85-95%.
+          - If one node still cannot control the room, send a fresh post-node recording rather than stacking more nodes; that is now treated as a denoiser tuning bug.
           "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
 
           gh release create $version $zip `

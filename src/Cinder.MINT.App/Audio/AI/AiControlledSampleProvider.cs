@@ -4,6 +4,31 @@ using NAudio.Wave;
 
 namespace Cinder.MINT.Audio.AI;
 
+/// <summary>
+/// Plain realtime-only observation state shared by the feature tap and denoiser.
+/// It deliberately owns no WPF/model objects, events, or dispatcher state.
+/// </summary>
+internal sealed class NoiseObservationState
+{
+    private float _speechProbability;
+    private float _noise;
+    private float _loudness;
+    private float _transient;
+
+    public float SpeechProbability => Volatile.Read(ref _speechProbability);
+    public float Noise => Volatile.Read(ref _noise);
+    public float Loudness => Volatile.Read(ref _loudness);
+    public float Transient => Volatile.Read(ref _transient);
+
+    public void Update(AiFeatureFrame frame)
+    {
+        Volatile.Write(ref _speechProbability, frame.SpeechProbability);
+        Volatile.Write(ref _noise, frame.Noise);
+        Volatile.Write(ref _loudness, frame.Loudness);
+        Volatile.Write(ref _transient, frame.Transient);
+    }
+}
+
 internal sealed class AiControlledSampleProvider : ISampleProvider
 {
     private readonly MintProfile _intentProfile;
@@ -17,21 +42,30 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
         MintAiRuntime runtime,
         AudioLevelState levels)
     {
-        // The graph/profile objects are UI-owned and have PropertyChanged subscribers.
-        // Copy only their values before the realtime callback is built. The audio thread
-        // must never dereference a live WPF-bound node/profile object.
+        // Graph/profile objects are UI-owned. The realtime path receives detached
+        // value copies only; never retain AudioNodeModel or its event subscribers.
         _intentProfile = DetachedCopy(node.Profile);
         _runtimeProfile = DetachedCopy(_intentProfile);
         _session = runtime.GetOrCreate(node.Id, node.AiSpecialist);
 
+        NoiseObservationState? noiseObservation =
+            node.AiSpecialist == MintAiSpecialist.Noise ? new NoiseObservationState() : null;
+
         var tap = new AiFeatureTapSampleProvider(
             source,
             () => _intentProfile.AiContentMode,
-            frame => _session.Evaluate(frame, _intentProfile, _runtimeProfile));
+            frame =>
+            {
+                noiseObservation?.Update(frame);
+                _session.Evaluate(frame, _intentProfile, _runtimeProfile);
+            });
 
         if (node.AiSpecialist == MintAiSpecialist.Noise)
         {
-            _output = new AdaptiveNeuralNoiseSampleProvider(tap, _runtimeProfile);
+            _output = new AdaptiveNeuralNoiseSampleProvider(
+                tap,
+                _runtimeProfile,
+                noiseObservation!);
             return;
         }
 
