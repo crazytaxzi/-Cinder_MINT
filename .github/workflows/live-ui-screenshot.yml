@@ -1,0 +1,93 @@
+name: Live UI screenshot
+
+on:
+  push:
+    branches:
+      - preview/live-ui-screenshot
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish MINT
+        shell: pwsh
+        run: |
+          dotnet restore Cinder.MINT.sln
+          dotnet publish src/Cinder.MINT.App/Cinder.MINT.App.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP\mint-ui"
+
+      - name: Launch and capture the live window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:RUNNER_TEMP 'mint-ui\Cinder.MINT.App.exe'
+          if (-not (Test-Path $exe)) { throw "MINT executable not found at $exe" }
+
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(40)
+            do {
+              Start-Sleep -Milliseconds 500
+              $proc.Refresh()
+              $handle = $proc.MainWindowHandle
+            } while ($handle -eq 0 -and -not $proc.HasExited -and (Get-Date) -lt $deadline)
+
+            if ($proc.HasExited) { throw "MINT exited before a window could be captured (exit $($proc.ExitCode))." }
+            if ($handle -eq 0) { throw 'MINT did not expose a main window handle in time.' }
+
+            Add-Type @"
+            using System;
+            using System.Runtime.InteropServices;
+            public static class MintCaptureWin32 {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+              [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+              [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+              [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+            }
+            "@
+
+            [MintCaptureWin32]::ShowWindow([IntPtr]$handle, 3) | Out-Null
+            [MintCaptureWin32]::SetForegroundWindow([IntPtr]$handle) | Out-Null
+            Start-Sleep -Seconds 4
+
+            $rect = New-Object MintCaptureWin32+RECT
+            if (-not [MintCaptureWin32]::GetWindowRect([IntPtr]$handle, [ref]$rect)) { throw 'GetWindowRect failed.' }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -lt 400 -or $height -lt 300) { throw "Unexpected MINT window size: ${width}x${height}" }
+
+            Add-Type -AssemblyName System.Drawing
+            $bitmap = New-Object System.Drawing.Bitmap $width, $height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+              $out = Join-Path $env:GITHUB_WORKSPACE 'Cinder-MINT-live.png'
+              $bitmap.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+              Write-Host "Captured $out (${width}x${height})"
+            }
+            finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+          }
+          finally {
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cinder-MINT-live-screenshot
+          path: Cinder-MINT-live.png
+          if-no-files-found: error
