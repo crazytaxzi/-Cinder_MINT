@@ -1,0 +1,280 @@
+<UserControl x:Class="Cinder.MINT.Controls.MintyControlDeck"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="900" MinHeight="560">
+    <UserControl.Resources>
+        <Style x:Key="DeckCard" TargetType="Border" BasedOn="{StaticResource PanelCard}">
+            <Setter Property="Margin" Value="0,0,12,12"/>
+            <Setter Property="Padding" Value="18"/>
+        </Style>
+        <Style x:Key="DeckNav" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,0,0,7"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style x:Key="DeckLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,4,0,4"/>
+        </Style>
+        <Style x:Key="DeckValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <Style TargetType="ProgressBar">
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Minimum" Value="0"/>
+            <Setter Property="Maximum" Value="100"/>
+            <Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+            <Setter Property="Background" Value="#101C22"/>
+            <Setter Property="BorderBrush" Value="#35505A"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="#F2070D11" BorderBrush="#35505A" BorderThickness="0,1,0,0">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="64"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{StaticResource MintHeaderGradient}" BorderBrush="#314A54" BorderThickness="0,0,0,1">
+                <Grid Margin="20,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="MINTYFILTER" FontSize="20" FontWeight="Black"/>
+                        <TextBlock Text="high-fidelity voice cleanup • simple control deck over the full MintyBay graph"
+                                   Foreground="{StaticResource MutedBrush}" FontSize="10"/>
+                    </StackPanel>
+                    <Border Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0"
+                            Background="#182622" BorderBrush="{StaticResource GreenBrush}" BorderThickness="1"
+                            CornerRadius="12" Padding="12,6">
+                        <TextBlock Text="{Binding LiveStateLabel}" Foreground="{StaticResource GreenBrush}" FontWeight="Black"/>
+                    </Border>
+                    <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="{Binding StartStopLabel}"
+                            MinWidth="112" Click="StartStop_Click"/>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="196"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Margin="12" Padding="10" CornerRadius="16"
+                        Background="#D90A1218" BorderBrush="#263C45" BorderThickness="1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Text="CONTROL DECK" Foreground="{StaticResource PurpleBrush}" FontWeight="Black"
+                                       FontSize="10" Margin="10,5,0,12"/>
+                            <Button x:Name="OverviewNav" Style="{StaticResource DeckNav}" Content="⌂   Overview" Click="OverviewNav_Click"/>
+                            <Button x:Name="DevicesNav" Style="{StaticResource DeckNav}" Content="▣   Devices" Click="DevicesNav_Click"/>
+                            <Button x:Name="ProcessingNav" Style="{StaticResource DeckNav}" Content="✦   Processing" Click="ProcessingNav_Click"/>
+                            <Button x:Name="DiagnosticsNav" Style="{StaticResource DeckNav}" Content="⌁   Diagnostics" Click="DiagnosticsNav_Click"/>
+                            <Separator Margin="3,8" Background="#29404A"/>
+                            <Button Style="{StaticResource DeckNav}" Content="☷   Open MintyBay" Click="MintyBay_Click"
+                                    BorderBrush="{StaticResource PurpleBrush}"/>
+                        </StackPanel>
+                        <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="10,0,8,8">
+                            <TextBlock Text="MINTY" Foreground="{StaticResource GreenBrush}" FontSize="15" FontWeight="Black"/>
+                            <TextBlock Text="friendly up front. ridiculous underneath." Foreground="{StaticResource MutedBrush}"
+                                       FontSize="9" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Grid Grid.Column="1" Margin="0,12,12,12">
+                    <!-- OVERVIEW -->
+                    <ScrollViewer x:Name="OverviewPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource PurpleBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="ROUTING" Foreground="{StaticResource PurpleBrush}" FontWeight="Black" FontSize="12"/>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="80"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="INPUT DEVICE" Style="{StaticResource DeckLabel}"/>
+                                            <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding InputDevice, Mode=TwoWay}"
+                                                      DisplayMemberPath="DisplayName"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="━━  ✦  ━━" Foreground="{StaticResource PurpleBrush}"
+                                                   FontSize="17" FontWeight="Black" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="PROCESSED OUTPUT" Style="{StaticResource DeckLabel}"/>
+                                            <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding OutputDevice, Mode=TwoWay}"
+                                                      DisplayMemberPath="DisplayName"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="{Binding RouteSummary}" Foreground="{StaticResource MutedBrush}" FontSize="10"
+                                               TextTrimming="CharacterEllipsis" Margin="0,10,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.1*"/>
+                                    <ColumnDefinition Width="0.9*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource DeckCard}" BorderBrush="{StaticResource GreenBrush}">
+                                    <StackPanel>
+                                        <TextBlock Text="WHAT ARE YOU USING IT FOR?" Foreground="{StaticResource GreenBrush}" FontWeight="Black" FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding UseCases}" SelectedItem="{Binding SelectedUseCase, Mode=TwoWay}"
+                                                  Margin="0,10,0,10"/>
+                                        <TextBlock Text="Pick the job, not the compressor math. MintyFilter tunes the same specialist nodes you can inspect in MintyBay."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+
+                                        <TextBlock Text="OVERALL TREATMENT" Style="{StaticResource DeckLabel}" Margin="0,15,0,0"/>
+                                        <Slider Minimum="0" Maximum="100" Value="{Binding OverallTreatment, Mode=TwoWay}"/>
+                                        <TextBlock Text="{Binding OverallTreatment, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/>
+
+                                        <TextBlock Text="NATURALNESS" Style="{StaticResource DeckLabel}" Margin="0,10,0,0"/>
+                                        <Slider Minimum="0" Maximum="100" Value="{Binding Naturalness, Mode=TwoWay}"/>
+                                        <TextBlock Text="{Binding Naturalness, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="1" Style="{StaticResource DeckCard}" BorderBrush="{StaticResource AquaBrush}">
+                                    <StackPanel>
+                                        <TextBlock Text="LIVE LEVELS" Foreground="{StaticResource AquaBrush}" FontWeight="Black" FontSize="12"/>
+                                        <TextBlock Text="INPUT" Style="{StaticResource DeckLabel}" Margin="0,14,0,5"/>
+                                        <ProgressBar Value="{Binding InputMeter}"/>
+                                        <TextBlock Text="{Binding InputMeter, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}" Margin="0,4,0,0"/>
+                                        <TextBlock Text="OUTPUT" Style="{StaticResource DeckLabel}" Margin="0,15,0,5"/>
+                                        <ProgressBar Value="{Binding OutputMeter}"/>
+                                        <TextBlock Text="{Binding OutputMeter, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}" Margin="0,4,0,0"/>
+                                        <Separator Margin="0,15,0,10" Background="#29404A"/>
+                                        <TextBlock Text="{Binding NoiseConfidence}" Foreground="{StaticResource PurpleBrush}" FontWeight="Bold" FontSize="10"/>
+                                        <TextBlock Text="{Binding NoiseHeard}" Foreground="{StaticResource MutedBrush}" FontSize="10"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource DeckCard}"><StackPanel><TextBlock Text="NOISE REMOVAL" Foreground="{StaticResource GreenBrush}" FontWeight="Black" FontSize="10"/><Slider Minimum="0" Maximum="100" Value="{Binding NoiseRemoval, Mode=TwoWay}"/><TextBlock Text="{Binding NoiseRemoval, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/></StackPanel></Border>
+                                <Border Grid.Column="1" Style="{StaticResource DeckCard}"><StackPanel><TextBlock Text="VOICE CLEANUP" Foreground="{StaticResource GreenBrush}" FontWeight="Black" FontSize="10"/><Slider Minimum="0" Maximum="100" Value="{Binding VoiceCleanup, Mode=TwoWay}"/><TextBlock Text="{Binding VoiceCleanup, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/></StackPanel></Border>
+                                <Border Grid.Column="2" Style="{StaticResource DeckCard}"><StackPanel><TextBlock Text="TONE" Foreground="{StaticResource PurpleBrush}" FontWeight="Black" FontSize="10"/><Slider Minimum="0" Maximum="100" Value="{Binding TonePolish, Mode=TwoWay}"/><TextBlock Text="{Binding TonePolish, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/></StackPanel></Border>
+                                <Border Grid.Column="3" Style="{StaticResource DeckCard}"><StackPanel><TextBlock Text="DYNAMICS" Foreground="{StaticResource PurpleBrush}" FontWeight="Black" FontSize="10"/><Slider Minimum="0" Maximum="100" Value="{Binding Dynamics, Mode=TwoWay}"/><TextBlock Text="{Binding Dynamics, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/></StackPanel></Border>
+                                <Border Grid.Column="4" Style="{StaticResource DeckCard}"><StackPanel><TextBlock Text="OUTPUT LEVEL" Foreground="{StaticResource AquaBrush}" FontWeight="Black" FontSize="10"/><Slider Minimum="0" Maximum="100" Value="{Binding OutputConsistency, Mode=TwoWay}"/><TextBlock Text="{Binding OutputConsistency, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/></StackPanel></Border>
+                            </Grid>
+
+                            <Border Style="{StaticResource DeckCard}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="STATUS" Foreground="{StaticResource GreenBrush}" FontWeight="Black" FontSize="10"/>
+                                        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="REFRESH DEVICES" Margin="15,0,0,0" Click="Refresh_Click"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- DEVICES -->
+                    <ScrollViewer x:Name="DevicesPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="DEVICES" FontSize="22" FontWeight="Black" Margin="5,4,0,14"/>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource PurpleBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="PRIMARY ROUTE" Foreground="{StaticResource PurpleBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="Input" Style="{StaticResource DeckLabel}" Margin="0,14,0,4"/>
+                                    <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding InputDevice, Mode=TwoWay}" DisplayMemberPath="DisplayName"/>
+                                    <TextBlock Text="Output" Style="{StaticResource DeckLabel}" Margin="0,14,0,4"/>
+                                    <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding OutputDevice, Mode=TwoWay}" DisplayMemberPath="DisplayName"/>
+                                    <Button Content="REFRESH DEVICE LIST" HorizontalAlignment="Left" Margin="0,16,0,0" Click="Refresh_Click"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource AquaBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="AUDIO HOST" Foreground="{StaticResource AquaBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="{Binding BackendSummary}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <TextBlock Text="Backend freedom is being built as a real adapter layer: WASAPI Shared/Exclusive, MME, WDM-KS and ASIO. MintyFilter must not silently switch APIs behind the user."
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="10" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- PROCESSING -->
+                    <ScrollViewer x:Name="ProcessingPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="PROCESSING" FontSize="22" FontWeight="Black" Margin="5,4,0,14"/>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource GreenBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="NOISE FILTER GUARDRAILS" Foreground="{StaticResource GreenBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="Maximum reduction" Style="{StaticResource DeckLabel}" Margin="0,14,0,0"/>
+                                    <Slider Minimum="6" Maximum="36" Value="{Binding MaxNoiseReduction, Mode=TwoWay}"/>
+                                    <TextBlock Text="{Binding MaxNoiseReduction, StringFormat={}{0:F0} dB}" Style="{StaticResource DeckValue}"/>
+                                    <TextBlock Text="Protect voice / RVC character" Style="{StaticResource DeckLabel}" Margin="0,12,0,0"/>
+                                    <Slider Minimum="0" Maximum="100" Value="{Binding VoiceProtection, Mode=TwoWay}"/>
+                                    <TextBlock Text="{Binding VoiceProtection, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource PurpleBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="SPECIALIST BRAINS" Foreground="{StaticResource PurpleBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="These are simplified controls over the same independent Noise → Cleanup → Tone → Dynamics → Loudness chain shown in MintyBay."
+                                               Foreground="{StaticResource MutedBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,6,0,12"/>
+                                    <TextBlock Text="Noise" Style="{StaticResource DeckLabel}"/><Slider Minimum="0" Maximum="100" Value="{Binding NoiseRemoval, Mode=TwoWay}"/>
+                                    <TextBlock Text="Cleanup" Style="{StaticResource DeckLabel}"/><Slider Minimum="0" Maximum="100" Value="{Binding VoiceCleanup, Mode=TwoWay}"/>
+                                    <TextBlock Text="Tone" Style="{StaticResource DeckLabel}"/><Slider Minimum="0" Maximum="100" Value="{Binding TonePolish, Mode=TwoWay}"/>
+                                    <TextBlock Text="Dynamics" Style="{StaticResource DeckLabel}"/><Slider Minimum="0" Maximum="100" Value="{Binding Dynamics, Mode=TwoWay}"/>
+                                    <TextBlock Text="Loudness" Style="{StaticResource DeckLabel}"/><Slider Minimum="0" Maximum="100" Value="{Binding OutputConsistency, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- DIAGNOSTICS -->
+                    <ScrollViewer x:Name="DiagnosticsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="DIAGNOSTICS" FontSize="22" FontWeight="Black" Margin="5,4,0,14"/>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource AquaBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="GRAPH" Foreground="{StaticResource AquaBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="{Binding GraphSummary}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding RouteSummary}" Foreground="{StaticResource MutedBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DeckCard}" BorderBrush="{StaticResource GreenBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="AI NOISE BRAIN" Foreground="{StaticResource GreenBrush}" FontWeight="Black"/>
+                                    <TextBlock Text="Heard" Style="{StaticResource DeckLabel}" Margin="0,12,0,0"/>
+                                    <TextBlock Text="{Binding NoiseHeard}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Decision" Style="{StaticResource DeckLabel}" Margin="0,12,0,0"/>
+                                    <TextBlock Text="{Binding NoiseDecision}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding NoiseConfidence}" Foreground="{StaticResource PurpleBrush}" FontWeight="Bold" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DeckCard}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="ENGINE STATUS" Foreground="{StaticResource PurpleBrush}" FontWeight="Black"/><TextBlock Text="{Binding StatusText}" Margin="0,7,0,0" TextWrapping="Wrap"/></StackPanel>
+                                    <Button Grid.Column="1" Content="OPEN MINTYBAY" Margin="16,0,0,0" Click="MintyBay_Click" BorderBrush="{StaticResource PurpleBrush}"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>
