@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/ai-noise-filter
+    paths:
+      - .github/workflows/apply-ai-noise-filter.yml
 
 permissions:
   contents: write
@@ -25,11 +27,9 @@ jobs:
         shell: pwsh
         run: python .\tools\apply_ai_noise_filter_patch.py
 
-      - name: Remove one-shot integration files
+      - name: Keep workflow changes out of runner commit
         shell: pwsh
-        run: |
-          Remove-Item .\tools\apply_ai_noise_filter_patch.py -Force
-          Remove-Item .\.github\workflows\apply-ai-noise-filter.yml -Force
+        run: git checkout -- .github/workflows/build.yml
 
       - name: Restore
         run: dotnet restore Cinder.MINT.sln
@@ -40,11 +40,11 @@ jobs:
       - name: Routing and AI safety checks
         run: dotnet run --project .\tests\Cinder.MINT.RoutingChecks\Cinder.MINT.RoutingChecks.csproj -c Release
 
-      - name: Commit verified integration
+      - name: Commit verified source integration
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add src tests
           git commit -m "Add built-in AI noise filter"
           git push origin HEAD:feature/ai-noise-filter
