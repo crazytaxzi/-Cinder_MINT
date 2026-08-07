@@ -213,7 +213,7 @@ public partial class MainWindow : Window
 
         menu.Items.Add(new Separator());
 
-        MenuItem shortcuts = CreateMenuItem("EDIT PATCHBAY SHORTCUTS…");
+        MenuItem shortcuts = CreateMenuItem("EDIT MINTYBAY SHORTCUTS…");
         shortcuts.Click += (_, _) => EditPatchbayShortcuts();
         menu.Items.Add(shortcuts);
 
@@ -313,7 +313,7 @@ public partial class MainWindow : Window
         {
             _hotkeyStore.Save(_hotkeys);
             _viewModel.NotifyGraphChanged(
-                $"Patchbay shortcuts saved — Add {_hotkeys.AddNode}, Remove {_hotkeys.RemoveHovered}",
+                $"MintyBay shortcuts saved — Add {_hotkeys.AddNode}, Remove {_hotkeys.RemoveHovered}",
                 false);
         }
         catch (Exception ex)
@@ -448,3 +448,4 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 }
+

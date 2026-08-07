@@ -1,8 +1,8 @@
-# MintyFilter Patchbay Interaction Specification
+# MintyFilter MintyBay Interaction Specification
 
 Branch lineage: `MintyFilter` -> `MintyFilter-patchbay-controls`.
 
-The patchbay is an editor first. Selecting, moving, wiring, panning, and inspecting are intentionally separate actions so ordinary mouse gestures never open controls by surprise.
+MintyBay is an editor first. Selecting, moving, wiring, panning, and inspecting are intentionally separate actions so ordinary mouse gestures never open controls by surprise.
 
 ## View navigation
 
@@ -62,7 +62,7 @@ On a socket it offers Disconnect plus the normal node insertion menu.
 | Open controls for hovered/selected node | `Enter` |
 | Toggle bypass for hovered/selected node | `B` |
 
-The context menu exposes `Edit Patchbay Shortcuts...`. Shortcuts are persisted separately in `%APPDATA%\Cinder MINT\patchbay-hotkeys.json` so editing patch gestures does not dirty the audio graph or require an engine restart.
+The context menu exposes `Edit MintyBay Shortcuts...`. Shortcuts are persisted separately in `%APPDATA%\Cinder MINT\patchbay-hotkeys.json` so editing patch gestures does not dirty the audio graph or require an engine restart.
 
 Escape is reserved as a universal cancel action and cannot be assigned.
 
@@ -82,7 +82,7 @@ Right-clicking a socket no longer destroys connections immediately. It opens a c
 
 ## Interaction rule
 
-The patchbay follows this priority:
+MintyBay follows this priority:
 
 1. socket drag = cable operation;
 2. node drag = node/group movement;
@@ -92,3 +92,4 @@ The patchbay follows this priority:
 6. explicit menu/hotkey = inspector or destructive action.
 
 No lower-priority behavior should leak through a higher-priority gesture.
+

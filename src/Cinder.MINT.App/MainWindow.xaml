@@ -142,7 +142,7 @@
                             BorderThickness="0,0,0,1">
                         <Grid Margin="15,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="MINT PATCH CANVAS" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Text="MINTYBAY" Style="{StaticResource SectionLabel}"/>
                                 <Border Margin="10,0,0,0"
                                         Background="#223AF0C4"
                                         BorderBrush="{StaticResource GreenBrush}"
@@ -667,3 +667,4 @@
         </Grid>
     </Border>
 </Window>
+

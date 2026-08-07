@@ -11,7 +11,7 @@ public sealed class ConfirmPatchRemovalDialog : Window
     public ConfirmPatchRemovalDialog(Window owner, string description)
     {
         Owner = owner;
-        Title = "Remove from MintyFilter patch";
+        Title = "Remove from MintyBay";
         Width = 460;
         Height = 230;
         ResizeMode = ResizeMode.NoResize;
@@ -36,7 +36,7 @@ public sealed class ConfirmPatchRemovalDialog : Window
 
         var message = new TextBlock
         {
-            Text = $"{description}\n\nThis changes the patch graph. Esc and Enter both default to KEEP.",
+            Text = $"{description}\n\nThis changes the MintyBay graph. Esc and Enter both default to KEEP.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = new SolidColorBrush(Color.FromRgb(210, 225, 225)),
             Margin = new Thickness(0, 14, 0, 12),
@@ -101,7 +101,7 @@ public sealed class PatchbayHotkeyDialog : Window
     {
         Owner = owner;
         Settings = settings.Clone();
-        Title = "MintyFilter Patchbay Shortcuts";
+        Title = "MintyFilter MintyBay Shortcuts";
         Width = 520;
         Height = 430;
         ResizeMode = ResizeMode.NoResize;
@@ -119,7 +119,7 @@ public sealed class PatchbayHotkeyDialog : Window
         var heading = new StackPanel();
         heading.Children.Add(new TextBlock
         {
-            Text = "PATCHBAY SHORTCUTS",
+            Text = "MINTYBAY SHORTCUTS",
             Foreground = new SolidColorBrush(Color.FromRgb(125, 255, 214)),
             FontSize = 16,
             FontWeight = FontWeights.Black
@@ -290,3 +290,4 @@ public sealed class PatchbayHotkeyDialog : Window
         }
     }
 }
+
