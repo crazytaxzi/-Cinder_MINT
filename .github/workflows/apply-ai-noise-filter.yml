@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - feature/ai-noise-filter
-    paths:
-      - tools/apply_ai_noise_filter_patch.py
 
 permissions:
   contents: write
