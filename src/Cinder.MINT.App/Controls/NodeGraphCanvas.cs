@@ -20,11 +20,19 @@ public sealed class GraphMessageEventArgs(string message) : EventArgs
 
 public sealed class NodeGraphCanvas : FrameworkElement
 {
-    public const double NodeWidth = 190;
-    private const double BaseNodeHeight = 92;
-    private const double PortSpacing = 22;
-    private const double PortStartY = 67;
-    private const double SocketRadius = 6;
+    public const double NodeWidth = 204;
+    private const double BaseNodeHeight = 100;
+    private const double PortSpacing = 23;
+    private const double PortStartY = 73;
+    private const double SocketRadius = 6.5;
+
+    private static readonly Color Mint = Color.FromRgb(125, 255, 214);
+    private static readonly Color Aqua = Color.FromRgb(66, 232, 224);
+    private static readonly Color Purple = Color.FromRgb(167, 107, 255);
+    private static readonly Color Pink = Color.FromRgb(255, 95, 170);
+    private static readonly Color Gold = Color.FromRgb(255, 211, 107);
+    private static readonly Color Text = Color.FromRgb(242, 255, 249);
+    private static readonly Color Muted = Color.FromRgb(143, 167, 170);
 
     private AudioNodeModel? _dragNode;
     private AudioNodeModel? _hoverNode;
@@ -84,11 +92,12 @@ public sealed class NodeGraphCanvas : FrameworkElement
     public void RefreshVisual() => InvalidateVisual();
 
     public static double GetNodeHeight(AudioNodeModel node) =>
-        Math.Max(BaseNodeHeight, PortStartY + Math.Max(node.Inputs.Count, node.Outputs.Count) * PortSpacing + 10);
+        Math.Max(BaseNodeHeight, PortStartY + Math.Max(node.Inputs.Count, node.Outputs.Count) * PortSpacing + 12);
 
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc);
+        DrawBackdrop(dc);
         DrawGrid(dc);
 
         if (Graph is null) return;
@@ -103,10 +112,42 @@ public sealed class NodeGraphCanvas : FrameworkElement
             DrawNode(dc, node);
     }
 
+    private void DrawBackdrop(DrawingContext dc)
+    {
+        var background = new LinearGradientBrush(
+            Color.FromRgb(7, 16, 20),
+            Color.FromRgb(14, 9, 20),
+            new Point(0, 0),
+            new Point(1, 1));
+        dc.DrawRectangle(background, null, new Rect(0, 0, ActualWidth, ActualHeight));
+
+        var mintBloom = new RadialGradientBrush
+        {
+            Center = new Point(0.18, 0.18),
+            GradientOrigin = new Point(0.18, 0.18),
+            RadiusX = 0.5,
+            RadiusY = 0.5
+        };
+        mintBloom.GradientStops.Add(new GradientStop(Color.FromArgb(34, Mint.R, Mint.G, Mint.B), 0));
+        mintBloom.GradientStops.Add(new GradientStop(Color.FromArgb(0, Mint.R, Mint.G, Mint.B), 1));
+        dc.DrawRectangle(mintBloom, null, new Rect(0, 0, ActualWidth, ActualHeight));
+
+        var purpleBloom = new RadialGradientBrush
+        {
+            Center = new Point(0.87, 0.68),
+            GradientOrigin = new Point(0.87, 0.68),
+            RadiusX = 0.46,
+            RadiusY = 0.46
+        };
+        purpleBloom.GradientStops.Add(new GradientStop(Color.FromArgb(26, Purple.R, Purple.G, Purple.B), 0));
+        purpleBloom.GradientStops.Add(new GradientStop(Color.FromArgb(0, Purple.R, Purple.G, Purple.B), 1));
+        dc.DrawRectangle(purpleBloom, null, new Rect(0, 0, ActualWidth, ActualHeight));
+    }
+
     private void DrawGrid(DrawingContext dc)
     {
-        var minor = new Pen(new SolidColorBrush(Color.FromArgb(20, 135, 145, 175)), 1);
-        var major = new Pen(new SolidColorBrush(Color.FromArgb(32, 183, 255, 42)), 1);
+        var minor = new Pen(new SolidColorBrush(Color.FromArgb(19, 104, 151, 153)), 1);
+        var major = new Pen(new SolidColorBrush(Color.FromArgb(33, Mint.R, Mint.G, Mint.B)), 1);
 
         for (double x = 0; x < ActualWidth; x += 24)
             dc.DrawLine(((int)x % 96 == 0) ? major : minor, new Point(x, 0), new Point(x, ActualHeight));
@@ -126,11 +167,9 @@ public sealed class NodeGraphCanvas : FrameworkElement
 
         Point start = GetPortPoint(sourceNode, sourcePort);
         Point end = GetPortPoint(targetNode, targetPort);
-        Color endColor = targetPort.Kind == AudioPortKind.Sidechain
-            ? Color.FromRgb(255, 79, 163)
-            : Color.FromRgb(168, 85, 247);
+        Color endColor = targetPort.Kind == AudioPortKind.Sidechain ? Pink : Purple;
 
-        DrawBezier(dc, start, end, Color.FromRgb(183, 255, 42), endColor, 3);
+        DrawBezier(dc, start, end, Mint, endColor, 3.2);
     }
 
     private void DrawPendingCable(DrawingContext dc, AudioPortModel port, Point cursor)
@@ -142,13 +181,14 @@ public sealed class NodeGraphCanvas : FrameworkElement
         Point socket = GetPortPoint(node, port);
         Point start = port.Direction == AudioPortDirection.Output ? socket : cursor;
         Point end = port.Direction == AudioPortDirection.Output ? cursor : socket;
+
         DrawBezier(
             dc,
             start,
             end,
-            Color.FromRgb(183, 255, 42),
-            port.Kind == AudioPortKind.Sidechain ? Color.FromRgb(255, 79, 163) : Color.FromRgb(168, 85, 247),
-            2.2);
+            Mint,
+            port.Kind == AudioPortKind.Sidechain ? Pink : Purple,
+            2.5);
     }
 
     private static void DrawBezier(
@@ -159,7 +199,7 @@ public sealed class NodeGraphCanvas : FrameworkElement
         Color endColor,
         double thickness)
     {
-        double bend = Math.Max(55, Math.Abs(end.X - start.X) * 0.42);
+        double bend = Math.Max(58, Math.Abs(end.X - start.X) * 0.42);
         var geometry = new PathGeometry();
         var figure = new PathFigure { StartPoint = start };
         figure.Segments.Add(new BezierSegment(
@@ -169,9 +209,15 @@ public sealed class NodeGraphCanvas : FrameworkElement
             true));
         geometry.Figures.Add(figure);
 
+        var glowColor = Color.FromArgb(55, startColor.R, startColor.G, startColor.B);
+        dc.DrawGeometry(null, new Pen(new SolidColorBrush(glowColor), thickness + 5), geometry);
         dc.DrawGeometry(
             null,
-            new Pen(new LinearGradientBrush(startColor, endColor, 0), thickness),
+            new Pen(new LinearGradientBrush(startColor, endColor, 0), thickness)
+            {
+                StartLineCap = PenLineCap.Round,
+                EndLineCap = PenLineCap.Round
+            },
             geometry);
     }
 
@@ -183,36 +229,69 @@ public sealed class NodeGraphCanvas : FrameworkElement
         bool selected = ReferenceEquals(node, _selectedNode);
         Color accent = Accent(node.Type);
 
-        var background = new SolidColorBrush(node.Enabled
-            ? Color.FromRgb(20, 23, 35)
-            : Color.FromRgb(39, 39, 45));
-        var borderColor = node.Enabled ? accent : Color.FromRgb(94, 96, 108);
-        var border = new Pen(new SolidColorBrush(borderColor), selected ? 3 : hovered ? 2.2 : 1.4);
-
         if (selected)
         {
             dc.DrawRoundedRectangle(
-                new SolidColorBrush(Color.FromArgb(42, accent.R, accent.G, accent.B)),
+                new SolidColorBrush(Color.FromArgb(34, accent.R, accent.G, accent.B)),
+                new Pen(new SolidColorBrush(Color.FromArgb(72, accent.R, accent.G, accent.B)), 1),
+                new Rect(rect.X - 8, rect.Y - 8, rect.Width + 16, rect.Height + 16),
+                22,
+                22);
+            dc.DrawRoundedRectangle(
+                new SolidColorBrush(Color.FromArgb(18, accent.R, accent.G, accent.B)),
                 null,
-                new Rect(rect.X - 6, rect.Y - 6, rect.Width + 12, rect.Height + 12),
-                16,
-                16);
+                new Rect(rect.X - 14, rect.Y - 14, rect.Width + 28, rect.Height + 28),
+                28,
+                28);
         }
 
-        dc.DrawRoundedRectangle(background, border, rect, 12, 12);
-        dc.DrawRoundedRectangle(new SolidColorBrush(accent), null, new Rect(rect.X, rect.Y, 5, rect.Height), 3, 3);
+        var background = node.Enabled
+            ? new LinearGradientBrush(
+                Color.FromRgb(20, 35, 41),
+                Color.FromRgb(16, 16, 28),
+                new Point(0, 0),
+                new Point(1, 1))
+            : new LinearGradientBrush(
+                Color.FromRgb(35, 37, 41),
+                Color.FromRgb(25, 26, 31),
+                new Point(0, 0),
+                new Point(1, 1));
+
+        var borderColor = node.Enabled ? accent : Color.FromRgb(91, 100, 105);
+        var border = new Pen(new SolidColorBrush(borderColor), selected ? 2.5 : hovered ? 1.9 : 1.15);
+
+        dc.DrawRoundedRectangle(background, border, rect, 16, 16);
+
+        var headerBrush = new LinearGradientBrush(
+            Color.FromArgb(48, accent.R, accent.G, accent.B),
+            Color.FromArgb(5, accent.R, accent.G, accent.B),
+            new Point(0, 0),
+            new Point(1, 0));
+        dc.DrawRoundedRectangle(
+            headerBrush,
+            null,
+            new Rect(rect.X + 1, rect.Y + 1, rect.Width - 2, 58),
+            15,
+            15);
+
+        dc.DrawRoundedRectangle(
+            new SolidColorBrush(accent),
+            null,
+            new Rect(rect.X + 12, rect.Y + 10, 4, 36),
+            2,
+            2);
 
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var title = new FormattedText(
             node.Title,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Segoe UI Semibold"),
-            13,
-            node.Enabled ? Brushes.White : Brushes.Gray,
+            new Typeface("Segoe UI Variable Text, Segoe UI Semibold"),
+            13.2,
+            node.Enabled ? new SolidColorBrush(Text) : Brushes.Gray,
             dpi)
         {
-            MaxTextWidth = NodeWidth - 28,
+            MaxTextWidth = NodeWidth - 72,
             Trimming = TextTrimming.CharacterEllipsis
         };
 
@@ -220,23 +299,55 @@ public sealed class NodeGraphCanvas : FrameworkElement
             node.Enabled ? node.DisplaySubtitle : "BYPASSED",
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"),
+            new Typeface("Segoe UI Variable Text, Segoe UI"),
             10.2,
-            new SolidColorBrush(node.Enabled ? Color.FromRgb(157, 163, 180) : Color.FromRgb(255, 191, 71)),
+            new SolidColorBrush(node.Enabled ? Muted : Gold),
             dpi)
         {
-            MaxTextWidth = NodeWidth - 28,
+            MaxTextWidth = NodeWidth - 35,
             Trimming = TextTrimming.CharacterEllipsis
         };
 
-        dc.DrawText(title, new Point(rect.X + 16, rect.Y + 14));
-        dc.DrawText(subtitle, new Point(rect.X + 16, rect.Y + 38));
+        dc.DrawText(title, new Point(rect.X + 23, rect.Y + 11));
+        dc.DrawText(subtitle, new Point(rect.X + 23, rect.Y + 35));
+
+        string badgeText = NodeBadge(node);
+        var badge = new FormattedText(
+            badgeText,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Segoe UI Variable Text, Segoe UI Semibold"),
+            8.2,
+            new SolidColorBrush(accent),
+            dpi);
+
+        double badgeWidth = badge.Width + 14;
+        Rect badgeRect = new(rect.Right - badgeWidth - 10, rect.Y + 11, badgeWidth, 18);
+        dc.DrawRoundedRectangle(
+            new SolidColorBrush(Color.FromArgb(38, accent.R, accent.G, accent.B)),
+            new Pen(new SolidColorBrush(Color.FromArgb(110, accent.R, accent.G, accent.B)), 0.8),
+            badgeRect,
+            9,
+            9);
+        dc.DrawText(badge, new Point(badgeRect.X + 7, badgeRect.Y + 3));
 
         for (int i = 0; i < node.Inputs.Count; i++)
             DrawPort(dc, node, node.Inputs[i], i, dpi);
 
         for (int i = 0; i < node.Outputs.Count; i++)
             DrawPort(dc, node, node.Outputs[i], i, dpi);
+    }
+
+    private static string NodeBadge(AudioNodeModel node)
+    {
+        if (!node.Enabled) return "OFF";
+        if (node.Type == AudioNodeType.Input) return "SOURCE";
+        if (node.Type == AudioNodeType.Output) return "OUT";
+        if (node.Type == AudioNodeType.Mixer) return "BUS";
+        if (node.Profile.AutoMode &&
+            node.Type is AudioNodeType.NoiseGate or AudioNodeType.DeEsser or AudioNodeType.LevelRider)
+            return "AUTO";
+        return "DSP";
     }
 
     private void DrawPort(
@@ -248,28 +359,39 @@ public sealed class NodeGraphCanvas : FrameworkElement
     {
         Point point = GetPortPoint(node, port, index);
         Color color = port.Kind == AudioPortKind.Sidechain
-            ? Color.FromRgb(255, 79, 163)
+            ? Pink
             : port.Direction == AudioPortDirection.Output
-                ? Color.FromRgb(183, 255, 42)
-                : Color.FromRgb(168, 85, 247);
+                ? Mint
+                : Purple;
 
-        dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(8, 9, 16)), new Pen(new SolidColorBrush(color), 2), point, SocketRadius, SocketRadius);
-        dc.DrawEllipse(new SolidColorBrush(color), null, point, 2.4, 2.4);
+        dc.DrawEllipse(
+            new SolidColorBrush(Color.FromArgb(45, color.R, color.G, color.B)),
+            null,
+            point,
+            SocketRadius + 4,
+            SocketRadius + 4);
+        dc.DrawEllipse(
+            new SolidColorBrush(Color.FromRgb(7, 13, 17)),
+            new Pen(new SolidColorBrush(color), 2.1),
+            point,
+            SocketRadius,
+            SocketRadius);
+        dc.DrawEllipse(new SolidColorBrush(color), null, point, 2.5, 2.5);
 
         var label = new FormattedText(
             port.Name,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Segoe UI Semibold"),
-            9.2,
+            new Typeface("Segoe UI Variable Text, Segoe UI Semibold"),
+            9.1,
             new SolidColorBrush(color),
             dpi);
 
         double y = point.Y - label.Height / 2;
         if (port.Direction == AudioPortDirection.Input)
-            dc.DrawText(label, new Point(node.X + 12, y));
+            dc.DrawText(label, new Point(node.X + 14, y));
         else
-            dc.DrawText(label, new Point(node.X + NodeWidth - 12 - label.Width, y));
+            dc.DrawText(label, new Point(node.X + NodeWidth - 14 - label.Width, y));
     }
 
     protected override void OnMouseDown(MouseButtonEventArgs e)
@@ -439,14 +561,14 @@ public sealed class NodeGraphCanvas : FrameworkElement
             for (int i = 0; i < node.Inputs.Count; i++)
             {
                 AudioPortModel port = node.Inputs[i];
-                if ((GetPortPoint(node, port, i) - point).Length <= 11)
+                if ((GetPortPoint(node, port, i) - point).Length <= 12)
                     return new PortHit(node, port);
             }
 
             for (int i = 0; i < node.Outputs.Count; i++)
             {
                 AudioPortModel port = node.Outputs[i];
-                if ((GetPortPoint(node, port, i) - point).Length <= 11)
+                if ((GetPortPoint(node, port, i) - point).Length <= 12)
                     return new PortHit(node, port);
             }
         }
@@ -469,10 +591,12 @@ public sealed class NodeGraphCanvas : FrameworkElement
 
     private static Color Accent(AudioNodeType type) => type switch
     {
-        AudioNodeType.Input => Color.FromRgb(183, 255, 42),
-        AudioNodeType.Output or AudioNodeType.Limiter => Color.FromRgb(255, 79, 163),
-        AudioNodeType.Mixer => Color.FromRgb(255, 191, 71),
-        _ => Color.FromRgb(168, 85, 247)
+        AudioNodeType.Input => Mint,
+        AudioNodeType.Output => Aqua,
+        AudioNodeType.Limiter => Pink,
+        AudioNodeType.Mixer => Gold,
+        AudioNodeType.Ducker => Pink,
+        _ => Purple
     };
 
     private static void OnGraphChanged(
