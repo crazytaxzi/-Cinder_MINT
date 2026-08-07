@@ -1,0 +1,129 @@
+name: Apply AI thread isolation hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/ai-ui-thread-isolation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/ai-ui-thread-isolation
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Apply source hotfix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $profilePath = 'src/Cinder.MINT.App/Models/MintProfile.cs'
+          $profile = Get-Content $profilePath -Raw
+          $oldClone = '    public MintProfile Clone() => (MintProfile)MemberwiseClone();'
+          $newClone = @'
+    public MintProfile Clone()
+    {
+        // Copy values only. MemberwiseClone also copies the PropertyChanged delegate,
+        // which can leak WPF/UI subscribers into realtime runtime profiles.
+        var clone = new MintProfile();
+        clone.CopyFrom(this);
+        return clone;
+    }
+'@
+          if (-not $profile.Contains($oldClone)) { throw 'MintProfile.Clone pattern not found.' }
+          $profile = $profile.Replace($oldClone, $newClone.TrimEnd())
+          Set-Content $profilePath $profile -Encoding utf8
+
+          $aiPath = 'src/Cinder.MINT.App/Audio/AI/AiControlledSampleProvider.cs'
+          $ai = Get-Content $aiPath -Raw
+          $ai = $ai.Replace('    private readonly AudioNodeModel _node;`r`n    private readonly MintProfile _runtimeProfile;', '    private readonly MintProfile _intentProfile;`r`n    private readonly MintProfile _runtimeProfile;')
+          if ($ai.Contains('private readonly AudioNodeModel _node;')) {
+            $ai = $ai.Replace('    private readonly AudioNodeModel _node;`n    private readonly MintProfile _runtimeProfile;', '    private readonly MintProfile _intentProfile;`n    private readonly MintProfile _runtimeProfile;')
+          }
+          $oldCtor = @'
+        _node = node;
+        _runtimeProfile = node.Profile.Clone();
+        _session = runtime.GetOrCreate(node.Id, node.AiSpecialist);
+
+        var tap = new AiFeatureTapSampleProvider(
+            source,
+            () => _node.Profile.AiContentMode,
+            frame => _session.Evaluate(frame, _node.Profile, _runtimeProfile));
+'@
+          $newCtor = @'
+        // Snapshot UI-owned intent before the realtime callback is constructed.
+        // The audio thread must never dereference a live WPF-bound graph/profile object.
+        _intentProfile = node.Profile.Clone();
+        _runtimeProfile = _intentProfile.Clone();
+        _session = runtime.GetOrCreate(node.Id, node.AiSpecialist);
+
+        var tap = new AiFeatureTapSampleProvider(
+            source,
+            () => _intentProfile.AiContentMode,
+            frame => _session.Evaluate(frame, _intentProfile, _runtimeProfile));
+'@
+          if (-not $ai.Contains($oldCtor.Trim())) { throw 'AiControlledSampleProvider constructor pattern not found.' }
+          $ai = $ai.Replace($oldCtor.Trim(), $newCtor.Trim())
+          Set-Content $aiPath $ai -Encoding utf8
+
+          $testPath = 'tests/Cinder.MINT.RoutingChecks/Program.cs'
+          $test = Get-Content $testPath -Raw
+          $needle = '    ("cross-output endpoint cycle is rejected", CrossOutputCycleIsRejected)'
+          if (-not $test.Contains($needle)) { throw 'Routing check list anchor not found.' }
+          $test = $test.Replace($needle, $needle + ',`r`n    ("profile clone isolates UI subscribers", ProfileCloneIsolatesUiSubscribers)')
+          $functionAnchor = 'static void SafeExplicitMixValidates()'
+          $cloneTest = @'
+static void ProfileCloneIsolatesUiSubscribers()
+{
+    var original = new MintProfile();
+    int notifications = 0;
+    original.PropertyChanged += (_, _) => notifications++;
+
+    MintProfile clone = original.Clone();
+    notifications = 0;
+    clone.AiStrength = 0.19f;
+
+    Require(notifications == 0, "A runtime profile clone inherited UI PropertyChanged subscribers.");
+
+    original.AiStrength = 0.23f;
+    Require(notifications == 1, "The original profile subscriber stopped behaving normally.");
+}
+
+'@
+          if (-not $test.Contains($functionAnchor)) { throw 'Routing check function anchor not found.' }
+          $test = $test.Replace($functionAnchor, $cloneTest + $functionAnchor)
+          Set-Content $testPath $test -Encoding utf8
+
+          $buildPath = '.github/workflows/build.yml'
+          $build = Get-Content $buildPath -Raw
+          $build = $build.Replace('v0.1.0-alpha.6', 'v0.1.0-alpha.7')
+          $build = $build.Replace('Independent AI specialist-brain preview.', 'AI realtime/UI thread-isolation hotfix.')
+          $build = $build.Replace('Changed:`r`n', 'Changed:`r`n- Fixed runtime profile clones inheriting UI PropertyChanged subscribers.`r`n- AI callbacks now use detached intent snapshots and never dereference live UI-bound node profiles.`r`n')
+          Set-Content $buildPath $build -Encoding utf8
+
+          Remove-Item '.github/workflows/apply-thread-hotfix.yml' -Force
+
+      - name: Verify build and safety checks
+        shell: pwsh
+        run: |
+          dotnet restore Cinder.MINT.sln
+          dotnet build Cinder.MINT.sln -c Release --no-restore
+          dotnet run --project .\tests\Cinder.MINT.RoutingChecks\Cinder.MINT.RoutingChecks.csproj -c Release
+
+      - name: Commit verified hotfix
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix AI realtime UI-thread isolation [release v0.1.0-alpha.7]'
+          git push origin HEAD:hotfix/ai-ui-thread-isolation
