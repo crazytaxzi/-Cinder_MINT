@@ -40,7 +40,7 @@ jobs:
       - name: Package preview
         shell: pwsh
         run: |
-          $version = "v0.2.0-mintyfilter-preview.2"
+          $version = "v0.2.0-mintyfilter-preview.3"
           $zip = ".\artifacts\MintyFilter-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\MintyFilter-win-x64\*" -DestinationPath $zip -Force
           "MINTYFILTER_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -48,7 +48,7 @@ jobs:
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MintyFilter-v0.2.0-mintyfilter-preview.2-win-x64
+          name: MintyFilter-v0.2.0-mintyfilter-preview.3-win-x64
           path: artifacts/MintyFilter-win-x64/**
           if-no-files-found: error
 
@@ -57,27 +57,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.2.0-mintyfilter-preview.2"
+          $version = "v0.2.0-mintyfilter-preview.3"
           $target = (git rev-parse HEAD).Trim()
           @"
           # MintyFilter $version
 
-          MintyBay interaction preview built directly from the MintyFilter integration branch.
+          First control-deck-first MintyFilter preview.
 
           Test focus:
-          - Mouse wheel pans vertically.
-          - Alt + wheel pans horizontally.
-          - Ctrl + wheel zooms around the cursor.
-          - Right-drag pans MintyBay; stationary right-click opens context actions.
-          - Dragging sockets creates cables without opening node controls.
-          - Clicking or dragging nodes does not open controls automatically.
-          - Empty-canvas drag creates a marquee selection; selected nodes move as a group.
-          - N opens the add-node picker at the cursor.
-          - R targets the hovered node/cable and requires explicit REMOVE confirmation; Enter/Escape keep it.
-          - MintyBay shortcuts are user-editable and persist separately from the audio graph.
-          - Existing routing, AI, and feedback safety checks remain enabled.
+          - MintyFilter opens to the friendly Overview instead of MintyBay.
+          - Input and processed-output selectors edit the same graph used by MintyBay.
+          - Use-case presets: RVC Live, RVC Polish, Podcast Natural, Podcast Studio, Streaming, Voice Chat and Raw Rescue.
+          - Overall Treatment and Naturalness tune the live specialist profiles.
+          - Noise, Cleanup, Tone, Dynamics and Output Level controls map to the real AI nodes.
+          - Input/output meters and AI Noise telemetry update on the Overview.
+          - Devices, Processing and Diagnostics pages expose real graph state rather than a second settings model.
+          - Open MintyBay reveals the advanced graph editor; Control Deck returns to the friendly interface.
+          - Existing MintyBay gestures, routing isolation, AI bounds and feedback protections remain enabled.
 
-          This preview still uses the current Cinder.MINT.App.exe executable name internally while the MintyFilter product merge is under development.
+          Known scope:
+          - Current engine backend remains WASAPI in this preview; MME/WDM-KS/ASIO are an upcoming backend-adapter milestone.
+          - The executable still uses the Cinder.MINT.App.exe internal name while product rebranding continues.
           "@ | Set-Content -Path ".\release-notes-mintyfilter.md" -Encoding utf8
 
           gh release delete $version --repo "$env:GITHUB_REPOSITORY" --yes 2>$null
