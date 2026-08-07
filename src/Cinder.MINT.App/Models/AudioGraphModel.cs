@@ -224,7 +224,8 @@ public sealed class AudioNodeModel : INotifyPropertyChanged
 
     private static string SpecialistSubtitle(MintAiSpecialist specialist) => specialist switch
     {
-        MintAiSpecialist.Cleanup => "noise • RVC artifacts • plosives • sibilance",
+        MintAiSpecialist.Cleanup => "RVC artifacts • plosives • sibilance • cleanup",
+        MintAiSpecialist.Noise => "neural spectral noise suppression • voice preservation",
         MintAiSpecialist.Tone => "spectral balance • body • presence • harshness",
         MintAiSpecialist.Dynamics => "compression • transient preservation • consistency",
         MintAiSpecialist.Loudness => "slow level riding • loudness stability",
@@ -694,19 +695,26 @@ public sealed class AudioGraphModel
         voice.IsVoiceActivitySource = true;
         voice.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
 
-        AudioNodeModel cleanup = graph.AddNode(AudioNodeType.AiProcessor, 270, 78);
+        AudioNodeModel noise = graph.AddNode(AudioNodeType.AiProcessor, 270, 78);
+        noise.AiSpecialist = MintAiSpecialist.Noise;
+        noise.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
+        noise.Profile.AiNoiseMaxReductionDb = 26f;
+        noise.Profile.AiNoiseSensitivity = 0.72f;
+        noise.Profile.AiNoiseSpeechProtection = 0.90f;
+
+        AudioNodeModel cleanup = graph.AddNode(AudioNodeType.AiProcessor, 510, 78);
         cleanup.AiSpecialist = MintAiSpecialist.Cleanup;
         cleanup.Profile.CopyFrom(MintProfiles.Voice["RVC Cleanup"]);
 
-        AudioNodeModel voiceTone = graph.AddNode(AudioNodeType.AiProcessor, 510, 78);
+        AudioNodeModel voiceTone = graph.AddNode(AudioNodeType.AiProcessor, 750, 78);
         voiceTone.AiSpecialist = MintAiSpecialist.Tone;
         voiceTone.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
 
-        AudioNodeModel voiceDynamics = graph.AddNode(AudioNodeType.AiProcessor, 750, 78);
+        AudioNodeModel voiceDynamics = graph.AddNode(AudioNodeType.AiProcessor, 990, 78);
         voiceDynamics.AiSpecialist = MintAiSpecialist.Dynamics;
         voiceDynamics.Profile.CopyFrom(MintProfiles.Voice["Streaming Strong"]);
 
-        AudioNodeModel voiceLoudness = graph.AddNode(AudioNodeType.AiProcessor, 990, 78);
+        AudioNodeModel voiceLoudness = graph.AddNode(AudioNodeType.AiProcessor, 1230, 78);
         voiceLoudness.AiSpecialist = MintAiSpecialist.Loudness;
         voiceLoudness.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
 
@@ -727,18 +735,19 @@ public sealed class AudioGraphModel
 
         AudioNodeModel ducker = graph.AddNode(AudioNodeType.Ducker, 990, 310);
 
-        AudioNodeModel mixer = graph.AddNode(AudioNodeType.Mixer, 1260, 190, "STREAM BUS");
+        AudioNodeModel mixer = graph.AddNode(AudioNodeType.Mixer, 1500, 190, "STREAM BUS");
 
-        AudioNodeModel master = graph.AddNode(AudioNodeType.AiProcessor, 1500, 190);
+        AudioNodeModel master = graph.AddNode(AudioNodeType.AiProcessor, 1740, 190);
         master.AiSpecialist = MintAiSpecialist.Master;
         master.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
         master.Profile.AiContentMode = MintAiContentMode.Mixed;
         master.Profile.AiTargetLoudnessDb = -16f;
         master.Profile.AiMaxCorrectionDb = 4f;
 
-        AudioNodeModel output = graph.AddNode(AudioNodeType.Output, 1740, 190, "STREAM OUTPUT");
+        AudioNodeModel output = graph.AddNode(AudioNodeType.Output, 1980, 190, "STREAM OUTPUT");
 
-        Connect(graph, voice, "OUT", cleanup, "IN");
+        Connect(graph, voice, "OUT", noise, "IN");
+        Connect(graph, noise, "OUT", cleanup, "IN");
         Connect(graph, cleanup, "OUT", voiceTone, "IN");
         Connect(graph, voiceTone, "OUT", voiceDynamics, "IN");
         Connect(graph, voiceDynamics, "OUT", voiceLoudness, "IN");

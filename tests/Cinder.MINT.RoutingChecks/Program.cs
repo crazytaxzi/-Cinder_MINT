@@ -13,7 +13,8 @@ var checks = new (string Name, Action Run)[]
     ("cross-output endpoint cycle is rejected", CrossOutputCycleIsRejected),
     ("all AI specialists infer finite bounded controls", AiSpecialistsAreBounded),
     ("AI brain sessions keep independent state", AiSessionsAreIndependent),
-    ("default AI master lives after explicit mix bus", AiMasterFollowsExplicitMix)
+    ("default AI master lives after explicit mix bus", AiMasterFollowsExplicitMix),
+    ("default AI noise filter precedes cleanup", AiNoisePrecedesCleanup)
 };
 
 foreach ((string name, Action run) in checks)
@@ -151,7 +152,7 @@ static void AiSpecialistsAreBounded()
     {
         var intent = new MintProfile
         {
-            AiContentMode = specialist == MintAiSpecialist.Cleanup ? MintAiContentMode.RvcVoice : MintAiContentMode.Auto,
+            AiContentMode = specialist is MintAiSpecialist.Cleanup or MintAiSpecialist.Noise ? MintAiContentMode.RvcVoice : MintAiContentMode.Auto,
             AiStrength = 0.9f,
             AiNaturalness = 0.8f,
             AiMaxCorrectionDb = 6f,
@@ -178,6 +179,10 @@ static void AiSpecialistsAreBounded()
             $"{specialist} EQ escaped bounds.");
         Require(controlled.LimiterCeilingDb is >= -12f and <= -0.1f,
             $"{specialist} limiter ceiling escaped bounds.");
+        Require(controlled.AiNoiseReductionDb is >= 0f and <= 36f, $"{specialist} noise reduction escaped bounds.");
+        Require(controlled.AiNoiseSensitivity is >= 0.05f and <= 1f, $"{specialist} noise sensitivity escaped bounds.");
+        Require(controlled.AiNoiseSpeechProtection is >= 0f and <= 1f, $"{specialist} speech protection escaped bounds.");
+        Require(controlled.AiNoiseLearnRate is >= 0.001f and <= 0.25f, $"{specialist} noise learning rate escaped bounds.");
     }
 }
 
@@ -219,6 +224,17 @@ static void AiMasterFollowsExplicitMix()
         $"AI Master is fed by {source.Type}, not an explicit Mix Bus.");
 }
 
+static void AiNoisePrecedesCleanup()
+{
+    AudioGraphModel graph = AudioGraphModel.CreateDefault();
+    AudioNodeModel noise = graph.Nodes.Single(x => x.Type == AudioNodeType.AiProcessor && x.AiSpecialist == MintAiSpecialist.Noise);
+    AudioNodeModel cleanup = graph.Nodes.Single(x => x.Type == AudioNodeType.AiProcessor && x.AiSpecialist == MintAiSpecialist.Cleanup);
+    AudioConnectionModel incoming = graph.Incoming(cleanup).Single();
+    AudioNodeModel source = graph.SourceNode(incoming) ?? throw new InvalidOperationException("AI Cleanup input source is missing.");
+
+    Require(source.Id == noise.Id, "AI Noise Filter is not immediately upstream of AI Cleanup in the starter voice chain.");
+}
+
 static bool AllFinite(MintProfile p) =>
     float.IsFinite(p.InputGainDb) &&
     float.IsFinite(p.GateThresholdDb) &&
@@ -233,7 +249,12 @@ static bool AllFinite(MintProfile p) =>
     float.IsFinite(p.CompressorAttackMs) &&
     float.IsFinite(p.CompressorReleaseMs) &&
     float.IsFinite(p.LimiterCeilingDb) &&
-    float.IsFinite(p.LimiterReleaseMs);
+    float.IsFinite(p.LimiterReleaseMs) &&
+    float.IsFinite(p.AiNoiseMaxReductionDb) &&
+    float.IsFinite(p.AiNoiseReductionDb) &&
+    float.IsFinite(p.AiNoiseSensitivity) &&
+    float.IsFinite(p.AiNoiseSpeechProtection) &&
+    float.IsFinite(p.AiNoiseLearnRate);
 
 static AudioNodeModel Input(
     AudioGraphModel graph,

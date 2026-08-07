@@ -6,6 +6,7 @@ namespace Cinder.MINT.Models;
 public enum MintAiSpecialist
 {
     Cleanup,
+    Noise,
     Tone,
     Dynamics,
     Loudness,
@@ -53,6 +54,11 @@ public sealed class MintProfile : INotifyPropertyChanged
     private float _aiConsistency = 0.72f;
     private float _aiTargetLoudnessDb = -18f;
     private float _aiAdaptation = 0.55f;
+    private float _aiNoiseMaxReductionDb = 24f;
+    private float _aiNoiseReductionDb = 10f;
+    private float _aiNoiseSensitivity = 0.68f;
+    private float _aiNoiseSpeechProtection = 0.86f;
+    private float _aiNoiseLearnRate = 0.035f;
 
     public string Name { get => _name; set => SetField(ref _name, value); }
     public bool AutoMode { get => _autoMode; set => SetField(ref _autoMode, value); }
@@ -84,8 +90,19 @@ public sealed class MintProfile : INotifyPropertyChanged
     public float AiConsistency { get => _aiConsistency; set => SetField(ref _aiConsistency, Math.Clamp(value, 0f, 1f)); }
     public float AiTargetLoudnessDb { get => _aiTargetLoudnessDb; set => SetField(ref _aiTargetLoudnessDb, Math.Clamp(value, -30f, -12f)); }
     public float AiAdaptation { get => _aiAdaptation; set => SetField(ref _aiAdaptation, Math.Clamp(value, 0f, 1f)); }
+    public float AiNoiseMaxReductionDb { get => _aiNoiseMaxReductionDb; set => SetField(ref _aiNoiseMaxReductionDb, Math.Clamp(value, 6f, 36f)); }
+    public float AiNoiseReductionDb { get => _aiNoiseReductionDb; set => SetField(ref _aiNoiseReductionDb, Math.Clamp(value, 0f, 36f)); }
+    public float AiNoiseSensitivity { get => _aiNoiseSensitivity; set => SetField(ref _aiNoiseSensitivity, Math.Clamp(value, 0.05f, 1f)); }
+    public float AiNoiseSpeechProtection { get => _aiNoiseSpeechProtection; set => SetField(ref _aiNoiseSpeechProtection, Math.Clamp(value, 0f, 1f)); }
+    public float AiNoiseLearnRate { get => _aiNoiseLearnRate; set => SetField(ref _aiNoiseLearnRate, Math.Clamp(value, 0.001f, 0.25f)); }
 
-    public MintProfile Clone() => (MintProfile)MemberwiseClone();
+    public MintProfile Clone()
+    {
+        // Value-only clone: never copy PropertyChanged subscribers into realtime state.
+        var clone = new MintProfile();
+        clone.CopyFrom(this);
+        return clone;
+    }
 
     public void CopyFrom(MintProfile source)
     {
@@ -118,6 +135,11 @@ public sealed class MintProfile : INotifyPropertyChanged
         AiConsistency = source.AiConsistency;
         AiTargetLoudnessDb = source.AiTargetLoudnessDb;
         AiAdaptation = source.AiAdaptation;
+        AiNoiseMaxReductionDb = source.AiNoiseMaxReductionDb;
+        AiNoiseReductionDb = source.AiNoiseReductionDb;
+        AiNoiseSensitivity = source.AiNoiseSensitivity;
+        AiNoiseSpeechProtection = source.AiNoiseSpeechProtection;
+        AiNoiseLearnRate = source.AiNoiseLearnRate;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

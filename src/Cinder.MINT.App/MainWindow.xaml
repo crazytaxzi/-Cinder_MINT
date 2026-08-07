@@ -335,6 +335,49 @@
                                             </StackPanel>
                                         </Border>
 
+                                        <Border Background="#A30C2221"
+                                                BorderBrush="{StaticResource AquaBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="14"
+                                                Padding="13"
+                                                Margin="0,0,0,12">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedNode.AiSpecialist}"
+                                                                     Value="{x:Static models:MintAiSpecialist.Noise}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel>
+                                                <TextBlock Text="AI NOISE FILTER"
+                                                           Foreground="{StaticResource AquaBrush}"
+                                                           FontWeight="Black"/>
+                                                <TextBlock Text="Neural noise analysis drives a deterministic 512-point spectral mask. No generated replacement audio."
+                                                           TextWrapping="Wrap"
+                                                           Style="{StaticResource TinyLabel}"
+                                                           Margin="0,3,0,7"/>
+                                                <TextBlock Text="Maximum noise reduction" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="6" Maximum="36"
+                                                        Value="{Binding SelectedNode.Profile.AiNoiseMaxReductionDb}"/>
+                                                <TextBlock Text="{Binding SelectedNode.Profile.AiNoiseMaxReductionDb, StringFormat={}{0:F0} dB max}"
+                                                           HorizontalAlignment="Right"/>
+                                                <TextBlock Text="Noise sensitivity" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="0.05" Maximum="1"
+                                                        Value="{Binding SelectedNode.Profile.AiNoiseSensitivity}"/>
+                                                <TextBlock Text="{Binding SelectedNode.Profile.AiNoiseSensitivity, StringFormat={}{0:P0}}"
+                                                           HorizontalAlignment="Right"/>
+                                                <TextBlock Text="Protect speech / RVC character" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="0" Maximum="1"
+                                                        Value="{Binding SelectedNode.Profile.AiNoiseSpeechProtection}"/>
+                                                <TextBlock Text="{Binding SelectedNode.Profile.AiNoiseSpeechProtection, StringFormat={}{0:P0}}"
+                                                           HorizontalAlignment="Right"/>
+                                            </StackPanel>
+                                        </Border>
+
                                         <TextBlock Text="INTENT — tell the brain what you want"
                                                    Style="{StaticResource SectionLabel}"/>
 
@@ -350,7 +393,7 @@
                                         <TextBlock Text="{Binding SelectedNode.Profile.AiNaturalness, StringFormat={}{0:P0}}"
                                                    HorizontalAlignment="Right"/>
 
-                                        <TextBlock Text="Maximum tonal correction" Style="{StaticResource IntentLabel}"/>
+                                        <TextBlock Text="Maximum tonal correction (Tone / Cleanup / Master)" Style="{StaticResource IntentLabel}"/>
                                         <Slider Minimum="1" Maximum="12"
                                                 Value="{Binding SelectedNode.Profile.AiMaxCorrectionDb}"/>
                                         <TextBlock Text="{Binding SelectedNode.Profile.AiMaxCorrectionDb, StringFormat={}{0:F1} dB max}"
