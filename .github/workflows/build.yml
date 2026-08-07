@@ -42,7 +42,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = "v0.1.0-alpha.6"
+          $version = "v0.1.0-alpha.7"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\Cinder-MINT-win-x64\*" -DestinationPath $zip -Force
 
@@ -55,38 +55,30 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.6]')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release v0.1.0-alpha.7]')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.1.0-alpha.6"
+          $version = "v0.1.0-alpha.7"
           $zip = ".\artifacts\Cinder-MINT-$version-win-x64.zip"
           $target = (git rev-parse HEAD).Trim()
 
           @"
           # Cinder MINT $version
 
-          Independent AI specialist-brain preview.
+          AI realtime/UI thread-isolation hotfix.
 
           Changed:
-          - Added true per-node neural controllers for AI Cleanup, AI Tone, AI Dynamics, AI Loudness, and AI Master.
-          - Every AI node keeps independent adaptive history and telemetry while sharing compact model weights/runtime infrastructure.
-          - AI analyzes its own node input and controls a private bounded DSP profile; it never fabricates or replaces waveform audio.
-          - AI Cleanup includes voice/RVC-aware artifact, noise, plosive, and sibilance analysis.
-          - AI Master is placed only after an explicit MIX BUS in the starter graph.
-          - Added intent-first controls for strength, naturalness, maximum correction, transient preservation, consistency, target loudness, and adaptation speed.
-          - Added live HEARD / DECISION / confidence telemetry to AI node inspectors.
-          - Retains isolated capture branches, explicit-only audible summing, endpoint loop validation, sidechain separation, and runaway-feedback safety stop.
-          - CI now checks neural control bounds, independent brain state, AI Master topology, and all existing routing safety cases.
-
-          AI note:
-          - The initial compact specialist neural weights are trained on synthetic acoustic scenarios. This is real neural inference controlling deterministic DSP, but real-world audio calibration/training remains an upcoming quality pass.
+          - AI callbacks now use detached intent/runtime profiles and never dereference live UI-bound node state.
+          - Fixed the alpha.6 path where realtime AI parameter updates could inherit UI PropertyChanged subscribers and touch WPF DispatcherTimer state from the audio thread.
+          - Added a regression check that fails if the realtime AI provider retains an AudioNodeModel or leaks UI profile subscribers into runtime state.
+          - Retains independent specialist brains, bounded deterministic DSP, isolated routing, explicit-only mixing, endpoint loop validation, and runaway-feedback protection.
 
           Test notes:
           - Extract into a fresh folder before launching Cinder.MINT.App.exe.
-          - Reset to the AI starter patch to see the new specialist layout if you have settings from an older alpha.
-          - Select an AI node to see its intent controls and live decision telemetry while MINT is running.
+          - Use RESET TO AI PATCH if an older saved graph is loaded.
+          - Start the graph and leave an AI node selected so HEARD / DECISION telemetry is active while testing.
           "@ | Set-Content -Path ".\release-notes.md" -Encoding utf8
 
           gh release create $version $zip `
