@@ -1,0 +1,52 @@
+name: Apply AI noise filter integration
+
+on:
+  push:
+    branches:
+      - feature/ai-noise-filter
+    paths:
+      - tools/apply_ai_noise_filter_patch.py
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ai-noise-filter
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Apply source patch
+        shell: pwsh
+        run: python .\tools\apply_ai_noise_filter_patch.py
+
+      - name: Remove one-shot integration files
+        shell: pwsh
+        run: |
+          Remove-Item .\tools\apply_ai_noise_filter_patch.py -Force
+          Remove-Item .\.github\workflows\apply-ai-noise-filter.yml -Force
+
+      - name: Restore
+        run: dotnet restore Cinder.MINT.sln
+
+      - name: Build
+        run: dotnet build Cinder.MINT.sln -c Release --no-restore
+
+      - name: Routing and AI safety checks
+        run: dotnet run --project .\tests\Cinder.MINT.RoutingChecks\Cinder.MINT.RoutingChecks.csproj -c Release
+
+      - name: Commit verified integration
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add built-in AI noise filter"
+          git push origin HEAD:feature/ai-noise-filter
