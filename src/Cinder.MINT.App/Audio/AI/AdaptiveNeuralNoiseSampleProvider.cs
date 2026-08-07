@@ -5,9 +5,9 @@ namespace Cinder.MINT.Audio.AI;
 
 /// <summary>
 /// Low-latency deterministic spectral suppressor controlled by the per-node neural brain.
-/// The neural controller never fabricates waveform samples; it only moves bounded noise
-/// reduction, sensitivity, speech-protection, and learning-rate controls on the detached
-/// runtime profile.
+/// V2 adds fast voice activity/noise-floor tracking, hard idle suppression, minimum-statistics
+/// noise estimation, and automatic dominant-channel handling for broken stereo voice devices.
+/// No waveform content is generated; the neural layer only controls bounded DSP behavior.
 /// </summary>
 internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
 {
@@ -17,6 +17,7 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
 
     private readonly ISampleProvider _source;
     private readonly MintProfile _runtime;
+    private readonly NoiseObservationState _observation;
     private readonly int _channels;
     private readonly float[] _window = new float[FftSize];
     private readonly ChannelState[] _states;
@@ -24,10 +25,22 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
     private readonly Queue<float> _output = new(FftSize * 8);
     private float[] _readScratch = new float[FftSize * 4];
 
-    public AdaptiveNeuralNoiseSampleProvider(ISampleProvider source, MintProfile runtime)
+    private float _noiseRms = 0.006f;
+    private bool _noiseRmsPrimed;
+    private float _idleGain = 1f;
+    private int _selectedChannel = -1;
+    private int _candidateChannel = -1;
+    private int _candidateFrames;
+    private int _coherentFrames;
+
+    public AdaptiveNeuralNoiseSampleProvider(
+        ISampleProvider source,
+        MintProfile runtime,
+        NoiseObservationState observation)
     {
         _source = source;
         _runtime = runtime;
+        _observation = observation;
         _channels = source.WaveFormat.Channels;
 
         if (source.WaveFormat.SampleRate != 48000)
@@ -37,8 +50,6 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
 
         for (int i = 0; i < FftSize; i++)
         {
-            // sqrt-Hann analysis/synthesis pair. With 50% overlap, squared windows
-            // sum to unity and preserve level through overlap-add.
             float hann = 0.5f - 0.5f * MathF.Cos(2f * MathF.PI * i / FftSize);
             _window[i] = MathF.Sqrt(Math.Max(0f, hann));
         }
@@ -70,8 +81,7 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
         while (written < count && _output.Count > 0)
             buffer[offset + written++] = _output.Dequeue();
 
-        // MINT is a live graph. During the initial FFT lookahead, output silence rather
-        // than returning 0 and causing WASAPI to treat the stream as ended.
+        // A live WASAPI graph must not return end-of-stream while the FFT lookahead fills.
         if (written < count)
         {
             Array.Clear(buffer, offset + written, count - written);
@@ -88,14 +98,27 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
 
         while (_input.Count >= frameSamples)
         {
+            FrameContext context = AnalyzeFrame();
+            UpdateAutomaticChannelSelection(context);
+
             for (int channel = 0; channel < _channels; channel++)
-                ProcessChannel(channel);
+            {
+                int sourceChannel = _selectedChannel >= 0 ? _selectedChannel : channel;
+                ProcessChannel(channel, sourceChannel, context);
+            }
+
+            float idleTarget = ComputeIdleTarget(context);
+            float openCoefficient = 0.085f;
+            float closeCoefficient = 0.0018f + Math.Clamp(_runtime.AiNoiseSensitivity, 0.05f, 1f) * 0.0012f;
 
             for (int frame = 0; frame < HopSize; frame++)
             {
+                float coefficient = idleTarget > _idleGain ? openCoefficient : closeCoefficient;
+                _idleGain += (idleTarget - _idleGain) * coefficient;
+
                 for (int channel = 0; channel < _channels; channel++)
                 {
-                    float value = _states[channel].Overlap[frame];
+                    float value = _states[channel].Overlap[frame] * _idleGain;
                     _output.Enqueue(Math.Clamp(value, -1f, 1f));
                 }
             }
@@ -110,29 +133,213 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
         }
     }
 
-    private void ProcessChannel(int channel)
+    private FrameContext AnalyzeFrame()
     {
-        ChannelState state = _states[channel];
+        double monoPower = 0;
+        double leftPower = 0;
+        double rightPower = 0;
+        double cross = 0;
+        float peak = 0f;
+        float previous = 0f;
+        double difference = 0;
 
         for (int i = 0; i < FftSize; i++)
         {
-            state.Real[i] = _input[i * _channels + channel] * _window[i];
+            float left = _input[i * _channels];
+            float right = _channels == 2 ? _input[i * _channels + 1] : left;
+            float mono = _channels == 2 ? (left + right) * 0.5f : left;
+
+            monoPower += mono * mono;
+            leftPower += left * left;
+            rightPower += right * right;
+            cross += left * right;
+            peak = Math.Max(peak, Math.Abs(mono));
+            if (i > 0) difference += Math.Abs(mono - previous);
+            previous = mono;
+        }
+
+        float rms = (float)Math.Sqrt(monoPower / FftSize + Epsilon);
+        float peakToRms = peak / Math.Max(rms, 0.000001f);
+        float fastTransient = Math.Clamp((float)(difference / FftSize) / Math.Max(rms, 0.002f) * 0.6f, 0f, 1f);
+
+        float observedSpeech = Math.Clamp(_observation.SpeechProbability, 0f, 1f);
+        float observedNoise = Math.Clamp(_observation.Noise, 0f, 1f);
+
+        if (!_noiseRmsPrimed)
+        {
+            // Do not assume the first frame is room tone. Cap the initial estimate so a
+            // person speaking immediately after START MINT is not mistaken for the floor.
+            _noiseRms = Math.Clamp(rms, 0.0015f, 0.008f);
+            _noiseRmsPrimed = true;
+        }
+
+        float snrDb = LinearToDb(Math.Max(rms, Epsilon) / Math.Max(_noiseRms, 0.000001f));
+        bool instantVoice =
+            observedSpeech >= 0.42f ||
+            snrDb >= 8.0f ||
+            (snrDb >= 5.5f && peakToRms >= 2.0f && observedNoise < 0.72f);
+
+        bool likelyNoiseOnly =
+            !instantVoice &&
+            observedSpeech < 0.34f &&
+            (observedNoise > 0.30f || snrDb < 5.0f);
+
+        if (likelyNoiseOnly)
+        {
+            float learn = 0.018f + Math.Clamp(_runtime.AiNoiseLearnRate, 0.001f, 0.25f) * 0.55f;
+            _noiseRms += (rms - _noiseRms) * Math.Clamp(learn, 0.01f, 0.18f);
+        }
+        else if (rms < _noiseRms)
+        {
+            _noiseRms += (rms - _noiseRms) * 0.02f;
+        }
+
+        float correlation = 1f;
+        float imbalanceDb = 0f;
+        int dominantChannel = -1;
+        if (_channels == 2)
+        {
+            correlation = (float)(cross / Math.Sqrt(Math.Max(leftPower * rightPower, Epsilon)));
+            float maxPower = (float)Math.Max(leftPower, rightPower);
+            float minPower = (float)Math.Max(Math.Min(leftPower, rightPower), Epsilon);
+            imbalanceDb = 10f * MathF.Log10(maxPower / minPower);
+            dominantChannel = leftPower >= rightPower ? 0 : 1;
+        }
+
+        return new FrameContext(
+            rms,
+            snrDb,
+            observedSpeech,
+            observedNoise,
+            Math.Max(fastTransient, _observation.Transient),
+            instantVoice,
+            likelyNoiseOnly,
+            correlation,
+            imbalanceDb,
+            dominantChannel);
+    }
+
+    private void UpdateAutomaticChannelSelection(FrameContext context)
+    {
+        if (_channels != 2 ||
+            _runtime.AiContentMode is not (MintAiContentMode.Voice or MintAiContentMode.RvcVoice))
+        {
+            _selectedChannel = -1;
+            return;
+        }
+
+        bool obviouslyBrokenStereo =
+            context.ImbalanceDb >= 8f ||
+            (Math.Abs(context.Correlation) < 0.18f && context.ImbalanceDb >= 4.5f);
+
+        if (obviouslyBrokenStereo)
+        {
+            _coherentFrames = 0;
+            if (_candidateChannel == context.DominantChannel)
+                _candidateFrames++;
+            else
+            {
+                _candidateChannel = context.DominantChannel;
+                _candidateFrames = 1;
+            }
+
+            if (_candidateFrames >= 10 && _selectedChannel != _candidateChannel)
+            {
+                _selectedChannel = _candidateChannel;
+                foreach (ChannelState state in _states)
+                    state.ResetNoiseEstimator();
+            }
+            return;
+        }
+
+        _candidateFrames = 0;
+        _candidateChannel = -1;
+
+        if (_selectedChannel >= 0 &&
+            Math.Abs(context.Correlation) >= 0.78f &&
+            context.ImbalanceDb <= 2.5f)
+        {
+            _coherentFrames++;
+            if (_coherentFrames >= 80)
+            {
+                _selectedChannel = -1;
+                _coherentFrames = 0;
+                foreach (ChannelState state in _states)
+                    state.ResetNoiseEstimator();
+            }
+        }
+        else
+        {
+            _coherentFrames = 0;
+        }
+    }
+
+    private float ComputeIdleTarget(FrameContext context)
+    {
+        if (context.InstantVoice)
+            return 1f;
+
+        float maxReduction = Math.Clamp(_runtime.AiNoiseMaxReductionDb, 6f, 36f);
+        float strength = Math.Clamp(_runtime.AiStrength, 0f, 1f);
+        float sensitivity = Math.Clamp(_runtime.AiNoiseSensitivity, 0.05f, 1f);
+
+        // Spectral reduction handles noise under speech. This second stage is an expander
+        // only for confirmed non-speech, allowing one node to kill room tone between words
+        // without forcing the spectral mask to chew through the voice itself.
+        float idleReductionDb = Math.Clamp(
+            maxReduction + 12f + sensitivity * 8f,
+            18f,
+            56f) * (0.62f + strength * 0.38f);
+
+        if (!context.LikelyNoiseOnly)
+            idleReductionDb *= 0.45f;
+
+        return DbToLinear(-idleReductionDb);
+    }
+
+    private void ProcessChannel(
+        int outputChannel,
+        int sourceChannel,
+        FrameContext context)
+    {
+        ChannelState state = _states[outputChannel];
+
+        for (int i = 0; i < FftSize; i++)
+        {
+            state.Real[i] = _input[i * _channels + sourceChannel] * _window[i];
             state.Imag[i] = 0f;
         }
 
         Fft(state.Real, state.Imag, inverse: false);
 
-        float requestedReduction = Math.Clamp(
-            _runtime.AiNoiseReductionDb,
-            0f,
-            Math.Clamp(_runtime.AiNoiseMaxReductionDb, 6f, 36f));
-        float floorGain = DbToLinear(-requestedReduction);
+        float maxReduction = Math.Clamp(_runtime.AiNoiseMaxReductionDb, 6f, 36f);
+        float brainReduction = Math.Clamp(_runtime.AiNoiseReductionDb, 0f, maxReduction);
+        float strength = Math.Clamp(_runtime.AiStrength, 0f, 1f);
+        float naturalness = Math.Clamp(_runtime.AiNaturalness, 0f, 1f);
         float sensitivity = Math.Clamp(_runtime.AiNoiseSensitivity, 0.05f, 1f);
         float speechProtect = Math.Clamp(_runtime.AiNoiseSpeechProtection, 0f, 1f);
         float learnRate = Math.Clamp(_runtime.AiNoiseLearnRate, 0.001f, 0.25f);
-        float oversubtraction = 0.85f + sensitivity * 1.9f;
 
+        // The first version obeyed the neural request too literally. V2 treats it as one
+        // signal of need while the fast local noise/VAD layer can ask for stronger bounded
+        // reduction when the room is clearly noisy.
+        float observedNeed = Math.Clamp(
+            context.ObservedNoise * 0.72f +
+            (1f - context.ObservedSpeech) * 0.18f +
+            sensitivity * 0.10f,
+            0f,
+            1f);
+        float brainNeed = maxReduction <= 0f ? 0f : brainReduction / maxReduction;
+        float reductionNeed = Math.Max(brainNeed, observedNeed);
+        float requestedReduction = Math.Clamp(
+            maxReduction * (0.30f + reductionNeed * 0.70f) * (0.58f + strength * 0.42f),
+            0f,
+            maxReduction);
+
+        float floorGain = DbToLinear(-requestedReduction);
+        float oversubtraction = 1.35f + sensitivity * 3.15f;
         int half = FftSize / 2;
+
         for (int k = 0; k <= half; k++)
         {
             float real = state.Real[k];
@@ -140,41 +347,76 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
             float power = real * real + imag * imag + Epsilon;
 
             if (!state.NoisePrimed)
-                state.NoisePower[k] = Math.Max(power * 0.08f, Epsilon);
+            {
+                state.MinimumPower[k] = power;
+                state.NoisePower[k] = context.InstantVoice
+                    ? Math.Max(power * 0.08f, Epsilon)
+                    : Math.Max(power, Epsilon);
+            }
+
+            float minimum = state.MinimumPower[k];
+            if (!state.NoisePrimed || power < minimum)
+                minimum = power;
+            else
+                minimum += (power - minimum) * 0.00055f;
+            minimum = Math.Max(minimum, Epsilon);
+            state.MinimumPower[k] = minimum;
 
             float noise = state.NoisePower[k];
-            bool looksLikeNoise = power < noise * (1.6f + sensitivity * 1.8f);
-            float update = looksLikeNoise
-                ? learnRate
-                : learnRate * (0.012f + (1f - speechProtect) * 0.035f);
+            bool binLooksLikeNoise = power < noise * (2.4f + sensitivity * 3.2f);
+
+            float update;
+            if (context.LikelyNoiseOnly)
+                update = Math.Clamp(learnRate * (2.2f + sensitivity * 1.8f), 0.02f, 0.42f);
+            else if (binLooksLikeNoise)
+                update = Math.Clamp(learnRate * 0.12f, 0.001f, 0.035f);
+            else
+                update = 0.00035f;
+
             noise += (power - noise) * update;
-            noise = Math.Max(noise, Epsilon);
-            state.NoisePower[k] = noise;
+            noise = Math.Max(noise, minimum * 0.82f);
+            state.NoisePower[k] = Math.Max(noise, Epsilon);
 
-            float estimatedNoise = noise * oversubtraction;
-            float cleanPower = Math.Max(power - estimatedNoise, 0f);
-            float wiener = cleanPower / power;
-            float targetGain = floorGain + (1f - floorGain) * MathF.Pow(wiener, 0.72f);
+            float estimatedNoise = state.NoisePower[k] * oversubtraction;
+            float wiener = Math.Clamp(1f - estimatedNoise / power, 0f, 1f);
+            float spectralGain = MathF.Pow(wiener, 0.86f + sensitivity * 0.34f);
+            float targetGain = Math.Max(floorGain, spectralGain);
 
-            // Naturalness/speech protection never disables the denoiser; it simply
-            // prevents the mask from chewing deeply into voice harmonics.
-            float protectionBlend = speechProtect * 0.16f;
-            targetGain += (1f - targetGain) * protectionBlend;
+            float frequency = k * 48000f / FftSize;
+            bool voiceBand = frequency >= 95f && frequency <= 7600f;
+            if (context.InstantVoice && voiceBand)
+            {
+                // During speech the node may still remove noise, but a protected voice-band
+                // floor prevents stacked-denoiser-style hollowing and watery consonants.
+                float speechMaxReductionDb =
+                    12f +
+                    (1f - speechProtect) * 22f +
+                    sensitivity * 4f +
+                    (1f - naturalness) * 4f;
+                targetGain = Math.Max(
+                    targetGain,
+                    DbToLinear(-Math.Min(requestedReduction, speechMaxReductionDb)));
+            }
 
             float previous = state.PreviousGain[k];
-            float smoothed = previous + (targetGain - previous) * (targetGain < previous ? 0.32f : 0.18f);
-            state.PreviousGain[k] = smoothed;
+            float attenuationRate = context.LikelyNoiseOnly ? 0.48f : 0.24f;
+            float recoveryRate = context.InstantVoice ? 0.48f : 0.28f;
+            float rate = targetGain < previous ? attenuationRate : recoveryRate;
+            state.PreviousGain[k] = previous + (targetGain - previous) * rate;
         }
         state.NoisePrimed = true;
 
-        // Frequency smoothing reduces musical-noise pinholes without blurring the
-        // mask enough to dull consonants.
+        // Wider five-bin smoothing knocks down isolated musical-noise pinholes while
+        // retaining enough resolution for speech consonants.
         for (int k = 0; k <= half; k++)
         {
-            float left = state.PreviousGain[Math.Max(0, k - 1)];
-            float center = state.PreviousGain[k];
-            float right = state.PreviousGain[Math.Min(half, k + 1)];
-            state.SmoothedGain[k] = left * 0.22f + center * 0.56f + right * 0.22f;
+            float m2 = state.PreviousGain[Math.Max(0, k - 2)];
+            float m1 = state.PreviousGain[Math.Max(0, k - 1)];
+            float c = state.PreviousGain[k];
+            float p1 = state.PreviousGain[Math.Min(half, k + 1)];
+            float p2 = state.PreviousGain[Math.Min(half, k + 2)];
+            state.SmoothedGain[k] =
+                m2 * 0.08f + m1 * 0.19f + c * 0.46f + p1 * 0.19f + p2 * 0.08f;
         }
 
         for (int k = 0; k <= half; k++)
@@ -204,6 +446,7 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
     }
 
     private static float DbToLinear(float db) => MathF.Pow(10f, db / 20f);
+    private static float LinearToDb(float value) => 20f * MathF.Log10(Math.Max(value, 0.000001f));
 
     private static void Fft(float[] real, float[] imag, bool inverse)
     {
@@ -267,14 +510,36 @@ internal sealed class AdaptiveNeuralNoiseSampleProvider : ISampleProvider
         }
     }
 
+    private readonly record struct FrameContext(
+        float Rms,
+        float SnrDb,
+        float ObservedSpeech,
+        float ObservedNoise,
+        float Transient,
+        bool InstantVoice,
+        bool LikelyNoiseOnly,
+        float Correlation,
+        float ImbalanceDb,
+        int DominantChannel);
+
     private sealed class ChannelState
     {
         public float[] Real { get; } = new float[FftSize];
         public float[] Imag { get; } = new float[FftSize];
         public float[] NoisePower { get; } = new float[FftSize / 2 + 1];
+        public float[] MinimumPower { get; } = new float[FftSize / 2 + 1];
         public float[] PreviousGain { get; } = Enumerable.Repeat(1f, FftSize / 2 + 1).ToArray();
-        public float[] SmoothedGain { get; } = new float[FftSize / 2 + 1];
+        public float[] SmoothedGain { get; } = Enumerable.Repeat(1f, FftSize / 2 + 1).ToArray();
         public float[] Overlap { get; } = new float[FftSize];
         public bool NoisePrimed { get; set; }
+
+        public void ResetNoiseEstimator()
+        {
+            Array.Clear(NoisePower);
+            Array.Clear(MinimumPower);
+            Array.Fill(PreviousGain, 1f);
+            Array.Fill(SmoothedGain, 1f);
+            NoisePrimed = false;
+        }
     }
 }
