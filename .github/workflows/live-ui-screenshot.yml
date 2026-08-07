@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = Join-Path $env:RUNNER_TEMP 'mint-ui\Cinder.MINT.App.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'mint-ui\Cinder.MINT.exe'
           if (-not (Test-Path $exe)) { throw "MINT executable not found at $exe" }
 
           $proc = Start-Process -FilePath $exe -PassThru
@@ -45,17 +45,8 @@ jobs:
             if ($proc.HasExited) { throw "MINT exited before a window could be captured (exit $($proc.ExitCode))." }
             if ($handle -eq 0) { throw 'MINT did not expose a main window handle in time.' }
 
-            Add-Type @"
-            using System;
-            using System.Runtime.InteropServices;
-            public static class MintCaptureWin32 {
-              [StructLayout(LayoutKind.Sequential)]
-              public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-              [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-              [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-              [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-            }
-            "@
+            $native = 'using System; using System.Runtime.InteropServices; public static class MintCaptureWin32 { [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }'
+            Add-Type -TypeDefinition $native
 
             [MintCaptureWin32]::ShowWindow([IntPtr]$handle, 3) | Out-Null
             [MintCaptureWin32]::SetForegroundWindow([IntPtr]$handle) | Out-Null
@@ -71,7 +62,8 @@ jobs:
             $bitmap = New-Object System.Drawing.Bitmap $width, $height
             $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
             try {
-              $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+              $size = New-Object System.Drawing.Size $width, $height
+              $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $size)
               $out = Join-Path $env:GITHUB_WORKSPACE 'Cinder-MINT-live.png'
               $bitmap.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
               Write-Host "Captured $out (${width}x${height})"
