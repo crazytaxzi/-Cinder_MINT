@@ -40,7 +40,7 @@ jobs:
       - name: Package preview
         shell: pwsh
         run: |
-          $version = "v0.2.0-mintyfilter-preview.1"
+          $version = "v0.2.0-mintyfilter-preview.2"
           $zip = ".\artifacts\MintyFilter-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\MintyFilter-win-x64\*" -DestinationPath $zip -Force
           "MINTYFILTER_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -48,7 +48,7 @@ jobs:
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MintyFilter-v0.2.0-mintyfilter-preview.1-win-x64
+          name: MintyFilter-v0.2.0-mintyfilter-preview.2-win-x64
           path: artifacts/MintyFilter-win-x64/**
           if-no-files-found: error
 
@@ -57,24 +57,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.2.0-mintyfilter-preview.1"
+          $version = "v0.2.0-mintyfilter-preview.2"
           $target = (git rev-parse HEAD).Trim()
           @"
           # MintyFilter $version
 
-          Patchbay interaction preview built directly from the MintyFilter integration branch.
+          MintyBay interaction preview built directly from the MintyFilter integration branch.
 
           Test focus:
           - Mouse wheel pans vertically.
           - Alt + wheel pans horizontally.
           - Ctrl + wheel zooms around the cursor.
-          - Right-drag pans the canvas; stationary right-click opens context actions.
+          - Right-drag pans MintyBay; stationary right-click opens context actions.
           - Dragging sockets creates cables without opening node controls.
           - Clicking or dragging nodes does not open controls automatically.
           - Empty-canvas drag creates a marquee selection; selected nodes move as a group.
           - N opens the add-node picker at the cursor.
           - R targets the hovered node/cable and requires explicit REMOVE confirmation; Enter/Escape keep it.
-          - Shortcuts are user-editable and persist separately from the audio graph.
+          - MintyBay shortcuts are user-editable and persist separately from the audio graph.
           - Existing routing, AI, and feedback safety checks remain enabled.
 
           This preview still uses the current Cinder.MINT.App.exe executable name internally while the MintyFilter product merge is under development.
