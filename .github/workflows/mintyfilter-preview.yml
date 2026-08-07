@@ -1,0 +1,90 @@
+name: MintyFilter preview
+
+on:
+  push:
+    branches: [MintyFilter]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Cinder.MINT.sln
+
+      - name: Build
+        run: dotnet build Cinder.MINT.sln -c Release --no-restore
+
+      - name: Routing and AI safety checks
+        run: dotnet run --project .\tests\Cinder.MINT.RoutingChecks\Cinder.MINT.RoutingChecks.csproj -c Release
+
+      - name: Publish self-contained Windows app
+        run: >-
+          dotnet publish .\src\Cinder.MINT.App\Cinder.MINT.App.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o .\artifacts\MintyFilter-win-x64
+
+      - name: Package preview
+        shell: pwsh
+        run: |
+          $version = "v0.2.0-mintyfilter-preview.1"
+          $zip = ".\artifacts\MintyFilter-$version-win-x64.zip"
+          Compress-Archive -Path ".\artifacts\MintyFilter-win-x64\*" -DestinationPath $zip -Force
+          "MINTYFILTER_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MintyFilter-v0.2.0-mintyfilter-preview.1-win-x64
+          path: artifacts/MintyFilter-win-x64/**
+          if-no-files-found: error
+
+      - name: Publish MintyFilter prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "v0.2.0-mintyfilter-preview.1"
+          $target = (git rev-parse HEAD).Trim()
+          @"
+          # MintyFilter $version
+
+          Patchbay interaction preview built directly from the MintyFilter integration branch.
+
+          Test focus:
+          - Mouse wheel pans vertically.
+          - Alt + wheel pans horizontally.
+          - Ctrl + wheel zooms around the cursor.
+          - Right-drag pans the canvas; stationary right-click opens context actions.
+          - Dragging sockets creates cables without opening node controls.
+          - Clicking or dragging nodes does not open controls automatically.
+          - Empty-canvas drag creates a marquee selection; selected nodes move as a group.
+          - N opens the add-node picker at the cursor.
+          - R targets the hovered node/cable and requires explicit REMOVE confirmation; Enter/Escape keep it.
+          - Shortcuts are user-editable and persist separately from the audio graph.
+          - Existing routing, AI, and feedback safety checks remain enabled.
+
+          This preview still uses the current Cinder.MINT.App.exe executable name internally while the MintyFilter product merge is under development.
+          "@ | Set-Content -Path ".\release-notes-mintyfilter.md" -Encoding utf8
+
+          gh release delete $version --repo "$env:GITHUB_REPOSITORY" --yes 2>$null
+          git push origin ":refs/tags/$version" 2>$null
+          gh release create $version $env:MINTYFILTER_ZIP `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --target $target `
+            --title "MintyFilter $version" `
+            --notes-file ".\release-notes-mintyfilter.md" `
+            --prerelease
