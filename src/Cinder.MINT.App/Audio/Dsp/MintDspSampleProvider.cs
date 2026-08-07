@@ -5,18 +5,27 @@ using NAudio.Wave;
 namespace Cinder.MINT.Audio.Dsp;
 
 /// <summary>
-/// Low-latency deterministic DSP. "Intelligent" mode adapts thresholds and gain
-/// from measured signal statistics; it never synthesizes replacement audio.
+/// Low-latency deterministic DSP. AI nodes never synthesize audio: their neural
+/// controllers update a private runtime profile and this provider performs the
+/// bounded signal processing.
 /// </summary>
 public sealed class MintDspSampleProvider : ISampleProvider
 {
     private readonly ISampleProvider _source;
     private readonly DspConfiguration _config;
     private readonly AudioLevelState _levels;
-    private readonly BiQuadFilter[] _highPass;
-    private readonly BiQuadFilter[] _lowEq;
-    private readonly BiQuadFilter[] _midEq;
-    private readonly BiQuadFilter[] _highEq;
+    private readonly int _sampleRate;
+    private readonly int _channels;
+
+    private BiQuadFilter[] _highPass = [];
+    private BiQuadFilter[] _lowEq = [];
+    private BiQuadFilter[] _midEq = [];
+    private BiQuadFilter[] _highEq = [];
+
+    private float _lastHighPassHz = float.NaN;
+    private float _lastLowGainDb = float.NaN;
+    private float _lastMidGainDb = float.NaN;
+    private float _lastHighGainDb = float.NaN;
 
     private float _gateEnvelope;
     private float _compressorEnvelope;
@@ -36,15 +45,9 @@ public sealed class MintDspSampleProvider : ISampleProvider
         _source = source;
         _config = config;
         _levels = levels;
-
-        int sampleRate = source.WaveFormat.SampleRate;
-        int channels = source.WaveFormat.Channels;
-        MintProfile p = config.Profile;
-
-        _highPass = Create(channels, () => BiQuadFilter.HighPassFilter(sampleRate, Math.Clamp(p.HighPassHz, 30, 220), 0.707f));
-        _lowEq = Create(channels, () => BiQuadFilter.LowShelf(sampleRate, 140, 0.8f, p.LowGainDb));
-        _midEq = Create(channels, () => BiQuadFilter.PeakingEQ(sampleRate, 1800, 0.9f, p.MidGainDb));
-        _highEq = Create(channels, () => BiQuadFilter.HighShelf(sampleRate, 6200, 0.8f, p.HighGainDb));
+        _sampleRate = source.WaveFormat.SampleRate;
+        _channels = source.WaveFormat.Channels;
+        RefreshFilters(config.Profile, true);
     }
 
     public WaveFormat WaveFormat => _source.WaveFormat;
@@ -55,6 +58,8 @@ public sealed class MintDspSampleProvider : ISampleProvider
         if (read <= 0) return read;
 
         MintProfile p = _config.Profile;
+        RefreshFilters(p, false);
+
         int channels = WaveFormat.Channels;
         int sampleRate = WaveFormat.SampleRate;
         float inputGain = DbToLinear(p.InputGainDb);
@@ -77,16 +82,14 @@ public sealed class MintDspSampleProvider : ISampleProvider
             float sample = buffer[offset + i] * inputGain;
             float absolute = Math.Abs(sample);
 
-            // Adaptive noise floor: learn only from quiet material, never from active speech.
             float instantDb = LinearToDb(Math.Max(absolute, 0.000001f));
             if (p.AutoMode && instantDb < _noiseFloorDb + 12f)
                 _noiseFloorDb = 0.9995f * _noiseFloorDb + 0.0005f * instantDb;
 
-            if (_config.HighPassEnabled && !_config.IsProgram && !_config.IsMaster)
+            if (_config.HighPassEnabled)
                 sample = _highPass[channel].Transform(sample);
 
-            // Soft expander/gate. It closes smoothly instead of chopping word endings.
-            if (_config.GateEnabled && _config.IsVoice)
+            if (_config.GateEnabled)
             {
                 float thresholdDb = p.AutoMode
                     ? Math.Max(p.GateThresholdDb, _noiseFloorDb + 7f)
@@ -102,15 +105,14 @@ public sealed class MintDspSampleProvider : ISampleProvider
                 sample *= _gateEnvelope;
             }
 
-            if (_config.EqEnabled && !_config.IsMaster)
+            if (_config.EqEnabled)
             {
                 sample = _lowEq[channel].Transform(sample);
                 sample = _midEq[channel].Transform(sample);
                 sample = _highEq[channel].Transform(sample);
             }
 
-            // Sibilance detector uses high-frequency sample-to-sample energy.
-            if (_config.DeEsserEnabled && _config.IsVoice)
+            if (_config.DeEsserEnabled)
             {
                 float hf = Math.Abs(sample - _previousSample);
                 _previousSample = sample;
@@ -130,7 +132,7 @@ public sealed class MintDspSampleProvider : ISampleProvider
             _riderEnvelope = riderEnvelopeCoefficient * _riderEnvelope
                              + (1f - riderEnvelopeCoefficient) * absolute;
 
-            if (_config.RiderEnabled && !_config.IsMaster)
+            if (_config.RiderEnabled)
             {
                 float target = DbToLinear(p.TargetDb);
                 float desiredGain = Math.Clamp(
@@ -143,7 +145,7 @@ public sealed class MintDspSampleProvider : ISampleProvider
                 sample *= _riderGain;
             }
 
-            if (_config.CompressorEnabled && !_config.IsMaster)
+            if (_config.CompressorEnabled)
             {
                 absolute = Math.Abs(sample);
                 _compressorEnvelope = absolute > _compressorEnvelope
@@ -161,8 +163,6 @@ public sealed class MintDspSampleProvider : ISampleProvider
                 }
             }
 
-            // Retained for legacy configurations. New graphs normally use the dedicated
-            // SidechainDuckerSampleProvider with an explicit SIDECHAIN socket.
             if (_config.DuckerEnabled && _config.IsProgram)
             {
                 float activity = _levels.VoiceActivity;
@@ -215,6 +215,38 @@ public sealed class MintDspSampleProvider : ISampleProvider
         return read;
     }
 
+    private void RefreshFilters(MintProfile p, bool force)
+    {
+        float hp = Math.Clamp(p.HighPassHz, 30f, 220f);
+        float low = Math.Clamp(p.LowGainDb, -12f, 12f);
+        float mid = Math.Clamp(p.MidGainDb, -12f, 12f);
+        float high = Math.Clamp(p.HighGainDb, -12f, 12f);
+
+        if (force || Math.Abs(hp - _lastHighPassHz) >= 0.35f)
+        {
+            _highPass = Create(_channels, () => BiQuadFilter.HighPassFilter(_sampleRate, hp, 0.707f));
+            _lastHighPassHz = hp;
+        }
+
+        if (force || Math.Abs(low - _lastLowGainDb) >= 0.06f)
+        {
+            _lowEq = Create(_channels, () => BiQuadFilter.LowShelf(_sampleRate, 140, 0.8f, low));
+            _lastLowGainDb = low;
+        }
+
+        if (force || Math.Abs(mid - _lastMidGainDb) >= 0.06f)
+        {
+            _midEq = Create(_channels, () => BiQuadFilter.PeakingEQ(_sampleRate, 1800, 0.9f, mid));
+            _lastMidGainDb = mid;
+        }
+
+        if (force || Math.Abs(high - _lastHighGainDb) >= 0.06f)
+        {
+            _highEq = Create(_channels, () => BiQuadFilter.HighShelf(_sampleRate, 6200, 0.8f, high));
+            _lastHighGainDb = high;
+        }
+    }
+
     private static BiQuadFilter[] Create(int count, Func<BiQuadFilter> factory) =>
         Enumerable.Range(0, count).Select(_ => factory()).ToArray();
 
@@ -226,5 +258,6 @@ public sealed class MintDspSampleProvider : ISampleProvider
 
     private static float DbToLinear(float db) => MathF.Pow(10f, db / 20f);
 
-    private static float LinearToDb(float value) => 20f * MathF.Log10(Math.Max(value, 0.000001f));
+    private static float LinearToDb(float value) =>
+        20f * MathF.Log10(Math.Max(value, 0.000001f));
 }
