@@ -1,0 +1,241 @@
+                                                        <TextBlock Text="{Binding SelectedNode.AiState}"
+                                                                   Foreground="{StaticResource GreenBrush}"
+                                                                   FontSize="9"
+                                                                   FontWeight="Bold"/>
+                                                    </Border>
+                                                </Grid>
+
+                                                <TextBlock Text="Specialist task" Style="{StaticResource IntentLabel}"/>
+                                                <ComboBox ItemsSource="{Binding AiSpecialists}"
+                                                          SelectedItem="{Binding SelectedNode.AiSpecialist, Mode=TwoWay}"/>
+
+                                                <TextBlock Text="What is flowing through this node?" Style="{StaticResource IntentLabel}"/>
+                                                <ComboBox ItemsSource="{Binding AiContentModes}"
+                                                          SelectedItem="{Binding SelectedNode.Profile.AiContentMode, Mode=TwoWay}"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <TextBlock Text="INTENT — tell the brain what you want"
+                                                   Style="{StaticResource SectionLabel}"/>
+
+                                        <TextBlock Text="Control strength" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1"
+                                                Value="{Binding SelectedNode.Profile.AiStrength}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiStrength, StringFormat={}{0:P0}}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Naturalness / preserve original character" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1"
+                                                Value="{Binding SelectedNode.Profile.AiNaturalness}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiNaturalness, StringFormat={}{0:P0}}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Maximum tonal correction" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="1" Maximum="12"
+                                                Value="{Binding SelectedNode.Profile.AiMaxCorrectionDb}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiMaxCorrectionDb, StringFormat={}{0:F1} dB max}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Preserve transients / punch" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1"
+                                                Value="{Binding SelectedNode.Profile.AiPreserveTransients}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiPreserveTransients, StringFormat={}{0:P0}}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Consistency / set-and-forget pressure" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1"
+                                                Value="{Binding SelectedNode.Profile.AiConsistency}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiConsistency, StringFormat={}{0:P0}}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Target loudness (used by Loudness brain)" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-30" Maximum="-12"
+                                                Value="{Binding SelectedNode.Profile.AiTargetLoudnessDb}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiTargetLoudnessDb, StringFormat={}{0:F1} dB target}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <TextBlock Text="Learning / adaptation speed" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1"
+                                                Value="{Binding SelectedNode.Profile.AiAdaptation}"/>
+                                        <TextBlock Text="{Binding SelectedNode.Profile.AiAdaptation, StringFormat={}{0:P0}}"
+                                                   HorizontalAlignment="Right"/>
+
+                                        <Border Background="#B70A171C"
+                                                BorderBrush="{StaticResource PurpleBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="14"
+                                                Padding="13"
+                                                Margin="0,14,0,0">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <TextBlock Text="LIVE BRAIN TELEMETRY"
+                                                               Foreground="{StaticResource PurpleBrush}"
+                                                               FontWeight="Black"/>
+                                                    <TextBlock Text="{Binding SelectedNode.AiConfidenceText}"
+                                                               HorizontalAlignment="Right"
+                                                               Style="{StaticResource TinyLabel}"/>
+                                                </Grid>
+                                                <ProgressBar Height="7"
+                                                             Maximum="1"
+                                                             Value="{Binding SelectedNode.AiConfidence, Mode=OneWay}"
+                                                             Margin="0,7,0,9"/>
+                                                <TextBlock Text="HEARD" Style="{StaticResource TinyLabel}"/>
+                                                <TextBlock Text="{Binding SelectedNode.AiHeard}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,2,0,8"/>
+                                                <TextBlock Text="DECISION" Style="{StaticResource TinyLabel}"/>
+                                                <TextBlock Text="{Binding SelectedNode.AiAction}"
+                                                           Foreground="{StaticResource GreenBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Expander Header="EXPERT GUARDRAILS / STARTING DSP"
+                                                  Margin="0,12,0,0">
+                                            <StackPanel Margin="6,8,2,0">
+                                                <TextBlock Text="These are the deterministic DSP starting points. The AI owns a private runtime copy and may move it only within its intent limits."
+                                                           TextWrapping="Wrap"
+                                                           Style="{StaticResource TinyLabel}"
+                                                           Margin="0,0,0,7"/>
+                                                <TextBlock Text="Gate floor" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="-72" Maximum="-20"
+                                                        Value="{Binding SelectedNode.Profile.GateThresholdDb}"/>
+                                                <TextBlock Text="High-pass" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="30" Maximum="220"
+                                                        Value="{Binding SelectedNode.Profile.HighPassHz}"/>
+                                                <TextBlock Text="De-ess baseline" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="0" Maximum="1"
+                                                        Value="{Binding SelectedNode.Profile.DeEsserAmount}"/>
+                                                <TextBlock Text="Compression baseline" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="0" Maximum="1"
+                                                        Value="{Binding SelectedNode.Profile.Compression}"/>
+                                                <TextBlock Text="Limiter ceiling baseline" Style="{StaticResource IntentLabel}"/>
+                                                <Slider Minimum="-6" Maximum="-0.1"
+                                                        Value="{Binding SelectedNode.Profile.LimiterCeilingDb}"/>
+                                            </StackPanel>
+                                        </Expander>
+                                    </StackPanel>
+
+                                    <!-- sidechain -->
+                                    <StackPanel>
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}"
+                                                                 Value="{x:Static models:AudioNodeType.Ducker}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <TextBlock Text="SIDECHAIN DUCKER" Style="{StaticResource SectionLabel}"/>
+                                        <TextBlock Text="MAIN carries audible program audio. SIDECHAIN is analyzed only and is never summed into MAIN."
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource TinyLabel}"
+                                                   Margin="0,5,0,7"/>
+                                        <TextBlock Text="Duck depth" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-30" Maximum="0"
+                                                Value="{Binding SelectedNode.Profile.DuckingDb}"/>
+                                        <TextBlock Text="Trigger threshold" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-72" Maximum="-6"
+                                                Value="{Binding SelectedNode.Profile.DuckerThresholdDb}"/>
+                                        <TextBlock Text="Attack" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="1" Maximum="500"
+                                                Value="{Binding SelectedNode.Profile.DuckerAttackMs}"/>
+                                        <TextBlock Text="Release" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="20" Maximum="3000"
+                                                Value="{Binding SelectedNode.Profile.DuckerReleaseMs}"/>
+                                    </StackPanel>
+
+                                    <!-- mixer -->
+                                    <StackPanel>
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel" BasedOn="{StaticResource InspectorSection}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}"
+                                                                 Value="{x:Static models:AudioNodeType.Mixer}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <TextBlock Text="EXPLICIT MIX BUS" Style="{StaticResource SectionLabel}"/>
+                                        <TextBlock Text="This is the only node allowed to sum multiple audible inputs. Everything upstream remains isolated."
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource TinyLabel}"
+                                                   Margin="0,5,0,0"/>
+                                    </StackPanel>
+
+                                    <!-- manual DSP controls -->
+                                    <StackPanel Margin="0,12,0,0">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}" Value="{x:Static models:AudioNodeType.Input}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}" Value="{x:Static models:AudioNodeType.Output}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}" Value="{x:Static models:AudioNodeType.AiProcessor}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}" Value="{x:Static models:AudioNodeType.Mixer}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedNode.Type}" Value="{x:Static models:AudioNodeType.Ducker}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <TextBlock Text="MANUAL DSP NODE" Style="{StaticResource SectionLabel}"/>
+                                        <TextBlock Text="Expert fallback: deterministic controls with no neural decision layer."
+                                                   Style="{StaticResource TinyLabel}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,4,0,7"/>
+                                        <TextBlock Text="Input gain" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-24" Maximum="24" Value="{Binding SelectedNode.Profile.InputGainDb}"/>
+                                        <TextBlock Text="High-pass" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="30" Maximum="220" Value="{Binding SelectedNode.Profile.HighPassHz}"/>
+                                        <TextBlock Text="De-esser" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1" Value="{Binding SelectedNode.Profile.DeEsserAmount}"/>
+                                        <TextBlock Text="Low EQ" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-12" Maximum="12" Value="{Binding SelectedNode.Profile.LowGainDb}"/>
+                                        <TextBlock Text="Mid EQ" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-12" Maximum="12" Value="{Binding SelectedNode.Profile.MidGainDb}"/>
+                                        <TextBlock Text="High EQ" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-12" Maximum="12" Value="{Binding SelectedNode.Profile.HighGainDb}"/>
+                                        <TextBlock Text="Compression" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="0" Maximum="1" Value="{Binding SelectedNode.Profile.Compression}"/>
+                                        <TextBlock Text="Level target" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-32" Maximum="-12" Value="{Binding SelectedNode.Profile.TargetDb}"/>
+                                        <TextBlock Text="Limiter ceiling" Style="{StaticResource IntentLabel}"/>
+                                        <Slider Minimum="-12" Maximum="-0.1" Value="{Binding SelectedNode.Profile.LimiterCeilingDb}"/>
+                                    </StackPanel>
+
+                                    <Button Content="DELETE NODE"
+                                            Margin="0,16,0,0"
+                                            Background="#381722"
+                                            BorderBrush="{StaticResource HotBrush}"
+                                            Click="DeleteSelected_Click"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </Border>
+
+            <!-- transport -->
+            <Border Grid.Row="3"
+                    Background="#D90A1518"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,18,18">
+                <Grid Margin="16,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="230"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="250"/>
