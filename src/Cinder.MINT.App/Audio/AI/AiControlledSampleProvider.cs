@@ -9,7 +9,7 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
     private readonly MintProfile _intentProfile;
     private readonly MintProfile _runtimeProfile;
     private readonly AiBrainSession _session;
-    private readonly MintDspSampleProvider _dsp;
+    private readonly ISampleProvider _output;
 
     public AiControlledSampleProvider(
         ISampleProvider source,
@@ -29,19 +29,23 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
             () => _intentProfile.AiContentMode,
             frame => _session.Evaluate(frame, _intentProfile, _runtimeProfile));
 
+        if (node.AiSpecialist == MintAiSpecialist.Noise)
+        {
+            _output = new AdaptiveNeuralNoiseSampleProvider(tap, _runtimeProfile);
+            return;
+        }
+
         DspConfiguration configuration = ConfigurationFor(node.AiSpecialist, _runtimeProfile);
-        _dsp = new MintDspSampleProvider(tap, configuration, levels);
+        _output = new MintDspSampleProvider(tap, configuration, levels);
     }
 
-    public WaveFormat WaveFormat => _dsp.WaveFormat;
+    public WaveFormat WaveFormat => _output.WaveFormat;
 
     public int Read(float[] buffer, int offset, int count) =>
-        _dsp.Read(buffer, offset, count);
+        _output.Read(buffer, offset, count);
 
     private static MintProfile DetachedCopy(MintProfile source)
     {
-        // Do not use MemberwiseClone-backed MintProfile.Clone here: event delegates are
-        // object fields too. CopyFrom transfers values only and leaves subscribers behind.
         var copy = new MintProfile();
         copy.CopyFrom(source);
         return copy;
@@ -84,6 +88,10 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
                 config.EqEnabled = true;
                 config.CompressorEnabled = true;
                 config.LimiterEnabled = true;
+                break;
+
+            case MintAiSpecialist.Noise:
+                // Noise is handled by AdaptiveNeuralNoiseSampleProvider above.
                 break;
         }
 
