@@ -10,7 +10,7 @@ using System.Windows.Threading;
 
 namespace Cinder.MINT.ViewModels;
 
-public sealed record NodePaletteItem(AudioNodeType Type, string Label)
+public sealed record NodePaletteItem(AudioNodeType Type, string Label, MintAiSpecialist? Specialist = null)
 {
     public override string ToString() => Label;
 }
@@ -47,8 +47,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         NodePalette =
         [
             new(AudioNodeType.Input, "Audio input"),
-            new(AudioNodeType.AiProcessor, "AI specialist"),
+            new(AudioNodeType.AiProcessor, "AI · noise filter", MintAiSpecialist.Noise),
+            new(AudioNodeType.AiProcessor, "AI · cleanup / RVC repair", MintAiSpecialist.Cleanup),
+            new(AudioNodeType.AiProcessor, "AI · tone", MintAiSpecialist.Tone),
+            new(AudioNodeType.AiProcessor, "AI · dynamics", MintAiSpecialist.Dynamics),
+            new(AudioNodeType.AiProcessor, "AI · loudness", MintAiSpecialist.Loudness),
             new(AudioNodeType.Mixer, "Mix bus"),
+            new(AudioNodeType.AiProcessor, "AI · master", MintAiSpecialist.Master),
             new(AudioNodeType.Ducker, "Sidechain ducker"),
             new(AudioNodeType.Output, "Audio output"),
             new(AudioNodeType.Gain, "Manual · gain / trim"),
@@ -197,8 +202,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 node.Endpoint = Outputs.FirstOrDefault();
             else if (node.Type == AudioNodeType.AiProcessor)
             {
-                node.AiSpecialist = MintAiSpecialist.Cleanup;
-                node.Profile.CopyFrom(MintProfiles.Voice["Natural Broadcast"]);
+                MintAiSpecialist specialist = SelectedPaletteItem.Specialist ?? MintAiSpecialist.Cleanup;
+                node.AiSpecialist = specialist;
+
+                if (specialist == MintAiSpecialist.Master)
+                {
+                    node.Profile.CopyFrom(MintProfiles.Program["Music Safe"]);
+                    node.Profile.AiContentMode = MintAiContentMode.Mixed;
+                    node.Profile.AiMaxCorrectionDb = 4f;
+                }
+                else
+                {
+                    node.Profile.CopyFrom(specialist is MintAiSpecialist.Noise or MintAiSpecialist.Cleanup
+                        ? MintProfiles.Voice["RVC Cleanup"]
+                        : MintProfiles.Voice["Natural Broadcast"]);
+                }
+
+                if (specialist == MintAiSpecialist.Noise)
+                {
+                    node.Profile.AiNoiseMaxReductionDb = 26f;
+                    node.Profile.AiNoiseSensitivity = 0.72f;
+                    node.Profile.AiNoiseSpeechProtection = 0.90f;
+                }
             }
         }
         finally

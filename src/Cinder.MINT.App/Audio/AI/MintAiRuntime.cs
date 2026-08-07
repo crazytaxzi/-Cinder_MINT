@@ -123,6 +123,7 @@ public sealed class MintAiRuntime
     private static NeuralModel ModelFor(MintAiSpecialist specialist) => specialist switch
     {
         MintAiSpecialist.Cleanup => MintAiModels.Cleanup,
+        MintAiSpecialist.Noise => MintAiModels.Noise,
         MintAiSpecialist.Tone => MintAiModels.Tone,
         MintAiSpecialist.Dynamics => MintAiModels.Dynamics,
         MintAiSpecialist.Loudness => MintAiModels.Loudness,
@@ -180,6 +181,7 @@ public sealed class AiBrainSession
         string action = Specialist switch
         {
             MintAiSpecialist.Cleanup => ApplyCleanup(prediction, intent, runtime, strength, natural, maxCorrection, smoothing),
+            MintAiSpecialist.Noise => ApplyNoise(prediction, intent, runtime, strength, natural, smoothing),
             MintAiSpecialist.Tone => ApplyTone(prediction, runtime, strength, natural, maxCorrection, smoothing),
             MintAiSpecialist.Dynamics => ApplyDynamics(prediction, runtime, strength, natural, preserve, consistency, smoothing),
             MintAiSpecialist.Loudness => ApplyLoudness(prediction, intent, runtime, strength, consistency, smoothing),
@@ -216,6 +218,45 @@ public sealed class AiBrainSession
             snapshot = _snapshot;
             return snapshot is not null;
         }
+    }
+
+    private static string ApplyNoise(
+        float[] y,
+        MintProfile intent,
+        MintProfile p,
+        float strength,
+        float natural,
+        float smoothing)
+    {
+        float severity = Clamp01(y[0]);
+        float depth = Clamp01(y[1]);
+        float speech = Clamp01(y[2]);
+        float learning = Clamp01(y[3]);
+
+        float maxReduction = Math.Clamp(intent.AiNoiseMaxReductionDb, 6f, 36f);
+        float reductionTarget = Math.Clamp(
+            maxReduction * severity * strength * (0.86f + (1f - natural) * 0.18f),
+            0f,
+            maxReduction);
+        float sensitivityTarget = Math.Clamp(
+            intent.AiNoiseSensitivity + (depth - 0.5f) * 0.34f,
+            0.05f,
+            1f);
+        float protectionTarget = Math.Clamp(
+            Math.Max(intent.AiNoiseSpeechProtection * 0.82f, speech * (0.64f + natural * 0.32f)),
+            0f,
+            1f);
+        float learningTarget = Math.Clamp(
+            Lerp(0.004f, 0.16f, learning) * Lerp(0.72f, 1.18f, intent.AiAdaptation),
+            0.001f,
+            0.25f);
+
+        p.AiNoiseReductionDb = Smooth(p.AiNoiseReductionDb, reductionTarget, smoothing);
+        p.AiNoiseSensitivity = Smooth(p.AiNoiseSensitivity, sensitivityTarget, smoothing);
+        p.AiNoiseSpeechProtection = Smooth(p.AiNoiseSpeechProtection, protectionTarget, smoothing);
+        p.AiNoiseLearnRate = Smooth(p.AiNoiseLearnRate, learningTarget, smoothing);
+
+        return $"noise cut {p.AiNoiseReductionDb:F1} dB • sensitivity {p.AiNoiseSensitivity:P0} • voice protect {p.AiNoiseSpeechProtection:P0}";
     }
 
     private static string ApplyCleanup(
