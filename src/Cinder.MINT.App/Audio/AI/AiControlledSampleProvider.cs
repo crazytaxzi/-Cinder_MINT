@@ -6,7 +6,7 @@ namespace Cinder.MINT.Audio.AI;
 
 internal sealed class AiControlledSampleProvider : ISampleProvider
 {
-    private readonly AudioNodeModel _node;
+    private readonly MintProfile _intentProfile;
     private readonly MintProfile _runtimeProfile;
     private readonly AiBrainSession _session;
     private readonly MintDspSampleProvider _dsp;
@@ -17,14 +17,17 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
         MintAiRuntime runtime,
         AudioLevelState levels)
     {
-        _node = node;
-        _runtimeProfile = node.Profile.Clone();
+        // The graph/profile objects are UI-owned and have PropertyChanged subscribers.
+        // Copy only their values before the realtime callback is built. The audio thread
+        // must never dereference a live WPF-bound node/profile object.
+        _intentProfile = DetachedCopy(node.Profile);
+        _runtimeProfile = DetachedCopy(_intentProfile);
         _session = runtime.GetOrCreate(node.Id, node.AiSpecialist);
 
         var tap = new AiFeatureTapSampleProvider(
             source,
-            () => _node.Profile.AiContentMode,
-            frame => _session.Evaluate(frame, _node.Profile, _runtimeProfile));
+            () => _intentProfile.AiContentMode,
+            frame => _session.Evaluate(frame, _intentProfile, _runtimeProfile));
 
         DspConfiguration configuration = ConfigurationFor(node.AiSpecialist, _runtimeProfile);
         _dsp = new MintDspSampleProvider(tap, configuration, levels);
@@ -34,6 +37,15 @@ internal sealed class AiControlledSampleProvider : ISampleProvider
 
     public int Read(float[] buffer, int offset, int count) =>
         _dsp.Read(buffer, offset, count);
+
+    private static MintProfile DetachedCopy(MintProfile source)
+    {
+        // Do not use MemberwiseClone-backed MintProfile.Clone here: event delegates are
+        // object fields too. CopyFrom transfers values only and leaves subscribers behind.
+        var copy = new MintProfile();
+        copy.CopyFrom(source);
+        return copy;
+    }
 
     private static DspConfiguration ConfigurationFor(
         MintAiSpecialist specialist,
