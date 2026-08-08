@@ -166,7 +166,8 @@
                                   Grid.Row="1"
                                   HorizontalScrollBarVisibility="Auto"
                                   VerticalScrollBarVisibility="Auto"
-                                  ScrollChanged="GraphScroll_ScrollChanged">
+                                  ScrollChanged="GraphScroll_ScrollChanged"
+                                  ContextMenuOpening="GraphScroll_ContextMenuOpening">
                         <controls:NodeGraphCanvas x:Name="GraphCanvas"
                                                   Width="2300"
                                                   Height="1200"
@@ -667,4 +668,5 @@
         </Grid>
     </Border>
 </Window>
+
 
