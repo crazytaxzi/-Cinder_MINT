@@ -31,18 +31,18 @@ jobs:
           $code = 'src/Cinder.MINT.App/MainWindow.xaml.cs'
           $text = Get-Content $code -Raw
           $old = '    private void GraphScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => PositionInspector();'
-          $new = @'
-    private void GraphScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => PositionInspector();
-
-    private void GraphScroll_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-    {
-        // WPF ScrollBar injects its own bright native menu (Scroll Here / Page Left / etc.).
-        // MintyBay owns right-click interaction, so suppress every implicit scroller menu here.
-        e.Handled = true;
-    }
-'@
+          $new = @(
+            '    private void GraphScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => PositionInspector();',
+            '',
+            '    private void GraphScroll_ContextMenuOpening(object sender, ContextMenuEventArgs e)',
+            '    {',
+            '        // WPF ScrollBar injects its own bright native menu (Scroll Here / Page Left / etc.).',
+            '        // MintyBay owns right-click interaction, so suppress every implicit scroller menu here.',
+            '        e.Handled = true;',
+            '    }'
+          ) -join "`r`n"
           if (-not $text.Contains($old)) { throw 'GraphScroll handler anchor not found in MainWindow.xaml.cs' }
-          $text = $text.Replace($old, $new.TrimEnd())
+          $text = $text.Replace($old, $new)
           Set-Content $code $text -Encoding utf8
 
       - name: Commit fix
