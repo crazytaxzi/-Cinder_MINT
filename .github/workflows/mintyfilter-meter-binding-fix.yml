@@ -1,0 +1,45 @@
+name: MintyFilter control-deck meter binding fix
+
+on:
+  push:
+    branches: [MintyFilter-control-deck-meter-fix]
+    paths:
+      - '.github/workflows/mintyfilter-meter-binding-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: MintyFilter-control-deck-meter-fix
+
+      - name: Make read-only telemetry bindings explicitly OneWay
+        shell: pwsh
+        run: |
+          $xaml = 'src/Cinder.MINT.App/Controls/MintyControlDeck.xaml'
+          $text = Get-Content $xaml -Raw
+
+          $inputOld = '<ProgressBar Value="{Binding InputMeter}"/>'
+          $inputNew = '<ProgressBar Value="{Binding InputMeter, Mode=OneWay}"/>'
+          $outputOld = '<ProgressBar Value="{Binding OutputMeter}"/>'
+          $outputNew = '<ProgressBar Value="{Binding OutputMeter, Mode=OneWay}"/>'
+
+          if (-not $text.Contains($inputOld)) { throw 'InputMeter binding anchor not found' }
+          if (-not $text.Contains($outputOld)) { throw 'OutputMeter binding anchor not found' }
+
+          $text = $text.Replace($inputOld, $inputNew)
+          $text = $text.Replace($outputOld, $outputNew)
+          Set-Content $xaml $text -Encoding utf8
+
+      - name: Commit fix
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/Cinder.MINT.App/Controls/MintyControlDeck.xaml
+          git commit -m 'fix: make Control Deck meter bindings one-way'
+          git push origin HEAD:MintyFilter-control-deck-meter-fix
