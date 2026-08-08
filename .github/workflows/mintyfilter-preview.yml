@@ -40,7 +40,7 @@ jobs:
       - name: Package preview
         shell: pwsh
         run: |
-          $version = "v0.2.0-mintyfilter-preview.3"
+          $version = "v0.2.0-mintyfilter-preview.4"
           $zip = ".\artifacts\MintyFilter-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\MintyFilter-win-x64\*" -DestinationPath $zip -Force
           "MINTYFILTER_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -48,7 +48,7 @@ jobs:
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MintyFilter-v0.2.0-mintyfilter-preview.3-win-x64
+          name: MintyFilter-v0.2.0-mintyfilter-preview.4-win-x64
           path: artifacts/MintyFilter-win-x64/**
           if-no-files-found: error
 
@@ -57,23 +57,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.2.0-mintyfilter-preview.3"
+          $version = "v0.2.0-mintyfilter-preview.4"
           $target = (git rev-parse HEAD).Trim()
           @"
           # MintyFilter $version
 
-          First control-deck-first MintyFilter preview.
+          MintyBay interaction hotfix preview.
 
-          Test focus:
-          - MintyFilter opens to the friendly Overview instead of MintyBay.
-          - Input and processed-output selectors edit the same graph used by MintyBay.
-          - Use-case presets: RVC Live, RVC Polish, Podcast Natural, Podcast Studio, Streaming, Voice Chat and Raw Rescue.
-          - Overall Treatment and Naturalness tune the live specialist profiles.
-          - Noise, Cleanup, Tone, Dynamics and Output Level controls map to the real AI nodes.
-          - Input/output meters and AI Noise telemetry update on the Overview.
-          - Devices, Processing and Diagnostics pages expose real graph state rather than a second settings model.
-          - Open MintyBay reveals the advanced graph editor; Control Deck returns to the friendly interface.
-          - Existing MintyBay gestures, routing isolation, AI bounds and feedback protections remain enabled.
+          Fixes:
+          - Removes the native bright WPF scrollbar right-click menu from MintyBay.
+          - Replaces WPF KeyGesture parsing with MintyBay's own shortcut parser so plain N, R and B shortcuts are valid.
+          - Automatically repairs preview.3 shortcut strings such as None+N back to N.
+          - Escape remains reserved as the safe cancel action.
+
+          Existing test focus:
+          - Mouse wheel pans vertically; Alt+wheel pans horizontally; Ctrl+wheel zooms around the cursor.
+          - Right-drag pans MintyBay; stationary right-click opens MintyBay context actions.
+          - Dragging sockets creates cables without opening node controls.
+          - Clicking or dragging nodes does not open controls automatically.
+          - Empty-canvas drag creates a marquee selection; selected nodes move as a group.
+          - N opens add-node-at-cursor; R removes the hovered node/cable only after explicit confirmation.
+          - MintyBay shortcuts are user-editable and persist separately from the audio graph.
+          - Existing routing, AI, and feedback safety checks remain enabled.
 
           Known scope:
           - Current engine backend remains WASAPI in this preview; MME/WDM-KS/ASIO are an upcoming backend-adapter milestone.
