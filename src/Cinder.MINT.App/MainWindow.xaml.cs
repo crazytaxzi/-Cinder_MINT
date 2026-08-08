@@ -400,6 +400,13 @@ public partial class MainWindow : Window
 
     private void GraphScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => PositionInspector();
 
+    private void GraphScroll_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        // WPF ScrollBar injects its own bright native menu (Scroll Here / Page Left / etc.).
+        // MintyBay owns right-click interaction, so suppress every implicit scroller menu here.
+        e.Handled = true;
+    }
+
     private void PositionInspector()
     {
         AudioNodeModel? node = _viewModel.SelectedNode;
@@ -448,4 +455,5 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 }
+
 
