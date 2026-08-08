@@ -150,10 +150,10 @@
                                     <StackPanel>
                                         <TextBlock Text="LIVE LEVELS" Foreground="{StaticResource AquaBrush}" FontWeight="Black" FontSize="12"/>
                                         <TextBlock Text="INPUT" Style="{StaticResource DeckLabel}" Margin="0,14,0,5"/>
-                                        <ProgressBar Value="{Binding InputMeter}"/>
+                                        <ProgressBar Value="{Binding InputMeter, Mode=OneWay}"/>
                                         <TextBlock Text="{Binding InputMeter, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}" Margin="0,4,0,0"/>
                                         <TextBlock Text="OUTPUT" Style="{StaticResource DeckLabel}" Margin="0,15,0,5"/>
-                                        <ProgressBar Value="{Binding OutputMeter}"/>
+                                        <ProgressBar Value="{Binding OutputMeter, Mode=OneWay}"/>
                                         <TextBlock Text="{Binding OutputMeter, StringFormat={}{0:F0}%}" Style="{StaticResource DeckValue}" Margin="0,4,0,0"/>
                                         <Separator Margin="0,15,0,10" Background="#29404A"/>
                                         <TextBlock Text="{Binding NoiseConfidence}" Foreground="{StaticResource PurpleBrush}" FontWeight="Bold" FontSize="10"/>
@@ -278,3 +278,4 @@
         </Grid>
     </Border>
 </UserControl>
+
