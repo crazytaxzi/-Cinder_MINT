@@ -40,7 +40,7 @@ jobs:
       - name: Package preview
         shell: pwsh
         run: |
-          $version = "v0.2.0-mintyfilter-preview.4"
+          $version = "v0.2.0-mintyfilter-preview.5"
           $zip = ".\artifacts\MintyFilter-$version-win-x64.zip"
           Compress-Archive -Path ".\artifacts\MintyFilter-win-x64\*" -DestinationPath $zip -Force
           "MINTYFILTER_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -48,7 +48,7 @@ jobs:
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MintyFilter-v0.2.0-mintyfilter-preview.4-win-x64
+          name: MintyFilter-v0.2.0-mintyfilter-preview.5-win-x64
           path: artifacts/MintyFilter-win-x64/**
           if-no-files-found: error
 
@@ -57,20 +57,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.2.0-mintyfilter-preview.4"
+          $version = "v0.2.0-mintyfilter-preview.5"
           $target = (git rev-parse HEAD).Trim()
           @"
           # MintyFilter $version
 
-          MintyBay interaction hotfix preview.
+          Control Deck and MintyBay hotfix preview.
 
           Fixes:
+          - Fixes the Control Deck crash caused by a TwoWay binding targeting the read-only OutputMeter property.
+          - Makes both InputMeter and OutputMeter progress bindings explicitly OneWay telemetry.
           - Removes the native bright WPF scrollbar right-click menu from MintyBay.
-          - Replaces WPF KeyGesture parsing with MintyBay's own shortcut parser so plain N, R and B shortcuts are valid.
-          - Automatically repairs preview.3 shortcut strings such as None+N back to N.
+          - Uses MintyBay's own shortcut parser so plain N, R and B shortcuts are valid.
+          - Repairs legacy None+N-style shortcut strings automatically.
           - Escape remains reserved as the safe cancel action.
 
           Existing test focus:
+          - Open the Control Deck and verify both live meters render/update without a binding exception.
           - Mouse wheel pans vertically; Alt+wheel pans horizontally; Ctrl+wheel zooms around the cursor.
           - Right-drag pans MintyBay; stationary right-click opens MintyBay context actions.
           - Dragging sockets creates cables without opening node controls.
